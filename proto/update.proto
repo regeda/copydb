@@ -1,0 +1,18 @@
+syntax = "proto3";
+package copydb;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+message Update {
+	string id = 1;
+	int64 version = 2;
+
+	message Field {
+		string name = 1;
+		bytes data = 2;
+	}
+
+	bool remove = 3;
+	repeated Field set = 4 [(gogoproto.nullable) = false];
+	repeated Field unset = 5 [(gogoproto.nullable) = false];
+}
