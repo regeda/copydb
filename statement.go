@@ -1,8 +1,6 @@
 package copydb
 
-import (
-	"time"
-)
+import "time"
 
 // Statement wraps an update and execs it.
 type Statement struct {
@@ -40,5 +38,6 @@ func (a *Statement) Unset(name string) {
 // Exec runs a statement.
 func (a *Statement) Exec(db *DB, currtime time.Time) error {
 	defer freeUpdate(a.upd)
-	return db.replicate(a.upd, currtime)
+	a.upd.Unix = currtime.Unix()
+	return db.replicate(a.upd)
 }

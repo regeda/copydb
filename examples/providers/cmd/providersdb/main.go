@@ -44,8 +44,12 @@ func main() {
 	flag.Parse()
 
 	redisOpts := redis.ClusterOptions{
-		Addrs: []string{*redisHost},
+		Addrs:       []string{*redisHost},
+		DialTimeout: time.Second,
 	}
+
+	log.Println("connect redis...")
+
 	cluster := redis.NewClusterClient(&redisOpts)
 	if res := cluster.Ping(); res.Err() != nil {
 		log.Fatalf("failed to ping the server %s: %v", *redisHost, res.Err())
@@ -62,8 +66,12 @@ func main() {
 	http.HandleFunc("/provider", observeHandler(providerHandler(db), providerHandlerDurationSummary))
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
+		log.Println("run http...")
+
 		log.Fatal(http.ListenAndServe(*listenHost, nil))
 	}()
+
+	log.Println("run db...")
 
 	log.Fatal(db.Serve(context.Background()))
 }
@@ -97,19 +105,24 @@ func providerHandler(db *copydb.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		stmt := copydb.NewStatement(in.ID)
-		if in.Remove {
-			stmt.Remove()
-		} else {
-			for name, data := range in.Set {
-				stmt.Set(name, data)
-			}
-			for _, name := range in.Unset {
-				stmt.Unset(name)
-			}
-		}
-		if err := stmt.Exec(db, in.Currtime); err != nil {
+
+		if err := applyRequest(db, &in); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
+}
+
+func applyRequest(db *copydb.DB, in *providers.Request) error {
+	stmt := copydb.NewStatement(in.ID)
+	if in.Remove {
+		stmt.Remove()
+	} else {
+		for name, data := range in.Set {
+			stmt.Set(name, data)
+		}
+		for _, name := range in.Unset {
+			stmt.Unset(name)
+		}
+	}
+	return stmt.Exec(db, in.Currtime)
 }

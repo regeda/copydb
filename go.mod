@@ -1,7 +1,7 @@
 module github.com/regeda/copydb
 
 require (
-	github.com/go-redis/redis v0.0.0-20190121204619-0ea8fd90bdf4
+	github.com/go-redis/redis v6.15.2-0.20190208133755-473d039f0b77+incompatible
 	github.com/gogo/protobuf v1.2.0
 	github.com/google/uuid v1.1.0
 	github.com/mailru/easyjson v0.0.0-20180823135443-60711f1a8329

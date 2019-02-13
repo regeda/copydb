@@ -3,7 +3,7 @@ package copydb
 import "github.com/go-redis/redis"
 
 type Redis interface {
-	TxPipeline() redis.Pipeliner
+	Pipeline() redis.Pipeliner
 	HGetAll(key string) *redis.StringStringMapCmd
 	ZRangeByScore(key string, opt redis.ZRangeBy) *redis.StringSliceCmd
 	Subscribe(channels ...string) *redis.PubSub

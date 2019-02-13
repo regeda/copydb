@@ -397,10 +397,6 @@ type clusterSlot struct {
 	nodes      []*clusterNode
 }
 
-func (c *clusterSlot) between(slot int) bool {
-	return slot >= c.start && slot <= c.end
-}
-
 type clusterSlotSlice []*clusterSlot
 
 func (p clusterSlotSlice) Len() int {
@@ -576,7 +572,7 @@ func (c *clusterState) slotNodes(slot int) []*clusterNode {
 		return nil
 	}
 	x := c.slots[i]
-	if x.between(slot) {
+	if slot >= x.start && slot <= x.end {
 		return x.nodes
 	}
 	return nil
@@ -776,6 +772,11 @@ func cmdSlot(cmd Cmder, pos int) int {
 }
 
 func (c *ClusterClient) cmdSlot(cmd Cmder) int {
+	args := cmd.Args()
+	if args[0] == "cluster" && args[1] == "getkeysinslot" {
+		return args[2].(int)
+	}
+
 	cmdInfo := c.cmdInfo(cmd.Name())
 	return cmdSlot(cmd, cmdFirstKeyPos(cmd, cmdInfo))
 }
@@ -787,7 +788,7 @@ func (c *ClusterClient) cmdSlotAndNode(cmd Cmder) (int, *clusterNode, error) {
 	}
 
 	cmdInfo := c.cmdInfo(cmd.Name())
-	slot := cmdSlot(cmd, cmdFirstKeyPos(cmd, cmdInfo))
+	slot := c.cmdSlot(cmd)
 
 	if c.opt.ReadOnly && cmdInfo != nil && cmdInfo.ReadOnly {
 		if c.opt.RouteByLatency {
@@ -1526,34 +1527,46 @@ func (c *ClusterClient) txPipelineReadQueued(
 	return nil
 }
 
-func (c *ClusterClient) pubSub(channels []string) *PubSub {
+func (c *ClusterClient) pubSub() *PubSub {
 	var node *clusterNode
 	pubsub := &PubSub{
 		opt: c.opt.clientOptions(),
 
-		newConn: func() (conn *pool.Conn, err error) {
-			slot := -1
-			if len(channels) > 0 {
-				slot = hashtag.Slot(channels[0])
+		newConn: func(channels []string) (*pool.Conn, error) {
+			if node != nil {
+				panic("node != nil")
 			}
+
+			slot := hashtag.Slot(channels[0])
+
+			var err error
 			node, err = c.slotMasterNode(slot)
 			if err != nil {
 				return nil, err
 			}
-			return node.Client.newConn()
+
+			cn, err := node.Client.newConn()
+			if err != nil {
+				return nil, err
+			}
+
+			return cn, nil
 		},
 		closeConn: func(cn *pool.Conn) error {
-			return node.Client.connPool.CloseConn(cn)
+			err := node.Client.connPool.CloseConn(cn)
+			node = nil
+			return err
 		},
 	}
 	pubsub.init()
+
 	return pubsub
 }
 
 // Subscribe subscribes the client to the specified channels.
 // Channels can be omitted to create empty subscription.
 func (c *ClusterClient) Subscribe(channels ...string) *PubSub {
-	pubsub := c.pubSub(channels)
+	pubsub := c.pubSub()
 	if len(channels) > 0 {
 		_ = pubsub.Subscribe(channels...)
 	}
@@ -1563,7 +1576,7 @@ func (c *ClusterClient) Subscribe(channels ...string) *PubSub {
 // PSubscribe subscribes the client to the given patterns.
 // Patterns can be omitted to create empty subscription.
 func (c *ClusterClient) PSubscribe(channels ...string) *PubSub {
-	pubsub := c.pubSub(channels)
+	pubsub := c.pubSub()
 	if len(channels) > 0 {
 		_ = pubsub.PSubscribe(channels...)
 	}

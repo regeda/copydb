@@ -3,7 +3,6 @@ package copydb
 import (
 	"context"
 	"strconv"
-	"time"
 
 	"github.com/go-redis/redis"
 	"github.com/gogo/protobuf/proto"
@@ -70,7 +69,7 @@ func WithPool(pool Pool) DBOpt {
 // New creates a new DB.
 func New(r Redis, opts ...DBOpt) (*DB, error) {
 	if err := setupScripts(r); err != nil {
-		return nil, errors.Wrap(err, "scripts setup failed")
+		return nil, err
 	}
 
 	db := DB{
@@ -146,40 +145,63 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 	return nil
 }
 
-func (db *DB) replicate(u *Update, currtime time.Time) error {
+func (db *DB) replicate(u *Update) error {
 	itemKey := db.keys.item(u.Id)
 
-	upline := db.r.TxPipeline()
+	var res *redis.Cmd
 	if u.Remove {
-		removeItemScript.Run(upline, []string{itemKey})
+		res = db.processRemove(itemKey, u)
 	} else {
-		for _, f := range u.Set {
-			upline.HSet(itemKey, f.Name, f.Data)
-		}
-		for _, f := range u.Unset {
-			upline.HDel(itemKey, f.Name)
-		}
-	}
-	incr := upline.HIncrBy(itemKey, "__ver", 1)
-	if _, err := upline.Exec(); err != nil {
-		return errors.Wrap(err, "upline failed")
+		res = db.processUpdate(itemKey, u)
 	}
 
-	u.Version = incr.Val()
+	if err := res.Err(); err != nil {
+		return errors.Wrap(err, "script failed")
+	}
+
+	version, err := res.Int64()
+	if err != nil {
+		return errors.Wrap(err, "read version failed")
+	}
+
+	if version == 0 {
+		return nil
+	}
+
+	u.Version = version
 
 	data, err := proto.Marshal(u)
 	if err != nil {
 		return errors.Wrap(err, "marshal failed")
 	}
 
-	publine := db.r.TxPipeline()
-	publine.ZAdd(db.keys.list, redis.Z{
-		Score:  float64(currtime.Unix()),
+	pipe := db.r.Pipeline()
+	pipe.ZAdd(db.keys.list, redis.Z{
+		Score:  float64(u.Unix),
 		Member: u.Id,
 	})
-	publine.Publish(db.keys.channel, data)
-	_, err = publine.Exec()
-	return errors.Wrap(err, "publine failed")
+	pipe.Publish(db.keys.channel, data)
+	_, err = pipe.Exec()
+	return errors.Wrap(err, "pipeline failed")
+}
+
+func (db *DB) processRemove(itemKey string, u *Update) *redis.Cmd {
+	return removeItemScript.Run(db.r, []string{itemKey})
+}
+
+func (db *DB) processUpdate(itemKey string, u *Update) *redis.Cmd {
+	params := []interface{}{
+		len(u.Set),
+		len(u.Unset),
+	}
+	for _, f := range u.Set {
+		params = append(params, f.Name, f.Data)
+	}
+	for _, f := range u.Unset {
+		params = append(params, f.Name)
+	}
+
+	return updateItemScript.Run(db.r, []string{itemKey}, params...)
 }
 
 func (db *DB) loadList() ([]string, error) {

@@ -39,7 +39,9 @@ func easyjsonDdd9f62fDecodeGithubComRegedaCopydbExamplesProviders(in *jlexer.Lex
 		case "ID":
 			out.ID = string(in.String())
 		case "Coord":
-			(out.Coord).UnmarshalEasyJSON(in)
+			if data := in.Raw(); in.Ok() {
+				in.AddError((out.Coord).UnmarshalJSON(data))
+			}
 		case "Status":
 			out.Status = string(in.String())
 		default:
@@ -74,7 +76,7 @@ func easyjsonDdd9f62fEncodeGithubComRegedaCopydbExamplesProviders(out *jwriter.W
 		} else {
 			out.RawString(prefix)
 		}
-		(in.Coord).MarshalEasyJSON(out)
+		out.Raw((in.Coord).MarshalJSON())
 	}
 	{
 		const prefix string = ",\"Status\":"
@@ -139,7 +141,7 @@ func easyjsonDdd9f62fDecodeGithubComRegedaCopydbExamplesProviders1(in *jlexer.Le
 				v1 := 0
 				for !in.IsDelim(']') {
 					if v1 < 2 {
-						(out.Point)[v1] = float64(in.Float64())
+						out.Point[v1] = float64(in.Float64())
 						v1++
 					} else {
 						in.SkipRecursive()
@@ -179,7 +181,7 @@ func easyjsonDdd9f62fEncodeGithubComRegedaCopydbExamplesProviders1(out *jwriter.
 			if v2 > 0 {
 				out.RawByte(',')
 			}
-			out.Float64(float64((in.Point)[v2]))
+			out.Float64(float64(in.Point[v2]))
 		}
 		out.RawByte(']')
 	}

@@ -1,6 +1,6 @@
 # github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 github.com/beorn7/perks/quantile
-# github.com/go-redis/redis v0.0.0-20190121204619-0ea8fd90bdf4
+# github.com/go-redis/redis v6.15.2-0.20190208133755-473d039f0b77+incompatible
 github.com/go-redis/redis
 github.com/go-redis/redis/internal
 github.com/go-redis/redis/internal/consistenthash
