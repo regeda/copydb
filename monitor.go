@@ -6,6 +6,7 @@ import "log"
 type Monitor interface {
 	VersionConflictDetected(error)
 	ApplyFailed(error)
+	PurgeFailed(error)
 }
 
 var defaultMonitor = monitor{}
@@ -17,5 +18,9 @@ func (monitor) VersionConflictDetected(err error) {
 }
 
 func (monitor) ApplyFailed(err error) {
+	log.Printf("ERROR: %v", err)
+}
+
+func (monitor) PurgeFailed(err error) {
 	log.Printf("ERROR: %v", err)
 }

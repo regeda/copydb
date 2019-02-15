@@ -87,6 +87,10 @@ func (m *monitor) ApplyFailed(err error) {
 	log.Printf("ERROR: %v", err)
 }
 
+func (m *monitor) PurgeFailed(err error) {
+	log.Printf("ERROR: %v", err)
+}
+
 func observeHandler(h http.Handler, s prometheus.Summary) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer summaryObserve(s, time.Now())

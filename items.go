@@ -1,6 +1,10 @@
 package copydb
 
-import "github.com/pkg/errors"
+import (
+	"container/list"
+
+	"github.com/pkg/errors"
+)
 
 type items map[string]*item
 
@@ -9,14 +13,27 @@ func (ii items) item(id string, pool Pool) *item {
 	if !ok {
 		i = &item{
 			Item: pool.New(),
+			elem: &list.Element{Value: id},
 		}
 		ii[id] = i
 	}
 	return i
 }
 
+func (ii items) destroy(id string, pool Pool) bool {
+	i, ok := ii[id]
+	if !ok {
+		return false
+	}
+	pool.Destroy(i.Item)
+	delete(ii, id)
+	return true
+}
+
 type item struct {
 	Item
+
+	elem    *list.Element
 	version int64
 }
 
