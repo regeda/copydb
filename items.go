@@ -8,23 +8,35 @@ import (
 
 type items map[string]*item
 
-func (ii items) item(id string, pool Pool) *item {
+func (ii items) empty() bool {
+	return len(ii) == 0
+}
+
+func (ii items) item(id string, pool Pool, lru *list.List) *item {
 	i, ok := ii[id]
 	if !ok {
 		i = &item{
-			Item: pool.New(),
-			elem: &list.Element{Value: id},
+			Item: pool.New(id),
+			elem: lru.PushBack(id),
 		}
 		ii[id] = i
+	} else {
+		lru.MoveToBack(i.elem)
 	}
 	return i
 }
 
-func (ii items) destroy(id string, pool Pool) bool {
-	i, ok := ii[id]
-	if !ok {
+func (ii items) evict(deadline int64, pool Pool, lru *list.List) bool {
+	elem := lru.Front()
+	if elem == nil {
 		return false
 	}
+	id := elem.Value.(string)
+	i := ii[id]
+	if i.unix > deadline {
+		return false
+	}
+	lru.Remove(i.elem)
 	pool.Destroy(i.Item)
 	delete(ii, id)
 	return true
@@ -33,7 +45,9 @@ func (ii items) destroy(id string, pool Pool) bool {
 type item struct {
 	Item
 
-	elem    *list.Element
+	elem *list.Element
+
+	unix    int64
 	version int64
 }
 
@@ -59,6 +73,7 @@ func (i *item) apply(u *Update) error {
 			i.Unset(f.Name)
 		}
 	}
+	i.unix = u.Unix
 	i.version = u.Version
 	return nil
 }

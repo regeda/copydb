@@ -11,10 +11,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	defaultTTL = 4 * time.Hour
-)
-
 // DB implements all subscriptions and updates.
 type DB struct {
 	r Redis
@@ -22,12 +18,14 @@ type DB struct {
 	items
 	keys
 
-	ttl time.Duration
-	lru *list.List
-
 	pool Pool
 
 	monitor Monitor
+
+	queries chan Query
+
+	ttl time.Duration
+	lru *list.List
 }
 
 // DBOpt configures DB.
@@ -75,7 +73,14 @@ func WithPool(pool Pool) DBOpt {
 	}
 }
 
-// WithTTL configures item's ttl.
+// WithBufferedQueries configures a capacity of queries queue.
+func WithBufferedQueries(c int) DBOpt {
+	return func(db *DB) {
+		db.queries = make(chan Query, c)
+	}
+}
+
+// WithTTL configures a cache TTL.
 func WithTTL(d time.Duration) DBOpt {
 	return func(db *DB) {
 		db.ttl = d
@@ -90,12 +95,12 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 
 	db := DB{
 		r:       r,
-		keys:    defaultKeys,
-		ttl:     defaultTTL,
-		lru:     list.New(),
 		items:   make(items),
-		monitor: defaultMonitor,
+		keys:    defaultKeys,
 		pool:    new(defaultPool),
+		monitor: defaultMonitor,
+		queries: make(chan Query),
+		lru:     list.New(),
 	}
 
 	for _, opt := range opts {
@@ -122,8 +127,13 @@ func (db *DB) Serve(ctx context.Context) error {
 	var buf Update
 	ch := pubsub.Channel()
 
-	purgeTicker := time.NewTicker(db.ttl)
-	defer purgeTicker.Stop()
+	var evictChan <-chan time.Time
+	if db.ttl > 0 {
+		ticker := time.NewTicker(db.ttl)
+		defer ticker.Stop()
+
+		evictChan = ticker.C
+	}
 
 	for {
 		select {
@@ -131,66 +141,44 @@ func (db *DB) Serve(ctx context.Context) error {
 			if err := db.apply([]byte(msg.Payload), &buf); err != nil {
 				db.monitor.ApplyFailed(err)
 			}
-		case now := <-purgeTicker.C:
-			db.purgeExpired(now)
+		case query := <-db.queries:
+			query.scan(db.items)
+		case now := <-evictChan:
+			db.evictExpired(now)
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
+// Queries returns a channel to accept queries.
+func (db *DB) Queries() chan<- Query {
+	return db.queries
+}
+
+func (db *DB) evictExpired(t time.Time) {
+	deadline := t.Add(-db.ttl).Unix()
+	for db.items.evict(deadline, db.pool, db.lru) {
+		// the loop stops when all expired items removed
+	}
+}
+
 func (db *DB) init() error {
-	ids, err := db.loadList(redis.ZRangeBy{
-		Min: strconv.FormatInt(time.Now().Add(-db.ttl).Unix(), 10),
-		Max: "+inf",
-	})
+	min := "-inf"
+	if db.ttl > 0 {
+		min = strconv.FormatInt(time.Now().Add(-db.ttl).Unix(), 10)
+	}
+	ids, err := db.loadList(redis.ZRangeBy{Min: min, Max: "+inf"})
 	if err != nil {
 		return errors.Wrap(err, "list failed")
 	}
 	for _, id := range ids {
-		item, err := db.loadItem(id)
-		if err != nil {
+		if err := db.loadItem(id); err != nil {
 			db.monitor.ApplyFailed(errors.Wrapf(err, "load failed for %s", id))
 			continue
 		}
-		db.lru.MoveToBack(item.elem)
 	}
 	return nil
-}
-
-func (db *DB) purgeExpired(t time.Time) {
-	item := db.lru.Front()
-	deadline := t.Add(-db.ttl).Unix()
-	for item != nil {
-		id := item.Value.(string)
-		purged, err := db.processPurge(id, deadline)
-		if err != nil {
-			db.monitor.PurgeFailed(errors.Wrapf(err, "purge failed for %s", id))
-			continue
-		}
-		if !purged {
-			return
-		}
-		next := item.Next()
-		db.lru.Remove(item)
-		db.items.destroy(id, db.pool)
-		item = next
-	}
-}
-
-func (db *DB) processPurge(id string, deadline int64) (bool, error) {
-	res := purgeItemScript.Run(db.r, []string{
-		db.keys.list,
-		db.keys.item(id),
-	}, id, deadline)
-	if err := res.Err(); err != nil {
-		return false, errors.Wrap(err, "script failed")
-	}
-	affected, err := res.Int64()
-	if err != nil {
-		return false, errors.Wrap(err, "malformed response")
-	}
-	return affected == 1, nil
 }
 
 func (db *DB) apply(payload []byte, buf *Update) error {
@@ -198,20 +186,17 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 		return errors.Wrap(err, "unmarshal failed")
 	}
 
-	item := db.items.item(buf.Id, db.pool)
+	item := db.items.item(buf.Id, db.pool, db.lru)
 
 	if err := item.apply(buf); err != nil {
 		if errors.Cause(err) != ErrVersionConflict {
 			return errors.Wrapf(err, "update failed for %s", buf.Id)
 		}
 		db.monitor.VersionConflictDetected(err)
-		item, err = db.loadItem(buf.Id)
-		if err != nil {
+		if err := db.loadItem(buf.Id); err != nil {
 			return errors.Wrapf(err, "refresh failed for %s", buf.Id)
 		}
 	}
-
-	db.lru.MoveToBack(item.elem)
 
 	return nil
 }
@@ -226,13 +211,9 @@ func (db *DB) replicate(u *Update) error {
 		res = db.processUpdate(itemKey, u)
 	}
 
-	if err := res.Err(); err != nil {
-		return errors.Wrap(err, "script failed")
-	}
-
 	version, err := res.Int64()
 	if err != nil {
-		return errors.Wrap(err, "read version failed")
+		return errors.Wrap(err, "script failed")
 	}
 
 	if version == 0 {
@@ -279,28 +260,27 @@ func (db *DB) loadList(zRangeBy redis.ZRangeBy) ([]string, error) {
 	return db.r.ZRangeByScore(db.keys.list, zRangeBy).Result()
 }
 
-func (db *DB) loadItem(id string) (*item, error) {
+func (db *DB) loadItem(id string) error {
 	itemKey := db.keys.item(id)
 
 	cmd := db.r.HGetAll(itemKey)
 	if err := cmd.Err(); err != nil {
-		return nil, errors.Wrap(err, "read failed")
+		return errors.Wrap(err, "read failed")
 	}
 
 	data := cmd.Val()
 
 	rawver, ok := data["__ver"]
 	if !ok {
-		return nil, ErrVersionNotFound
+		return ErrVersionNotFound
 	}
 	ver, err := strconv.ParseInt(rawver, 10, 64)
 	if err != nil {
-		return nil, errors.Wrap(err, "wrong version format")
+		return errors.Wrap(err, "wrong version format")
 	}
 	delete(data, "__ver") // version field is treated separately
 
-	item := db.items.item(id, db.pool)
-	item.init(ver, data)
+	db.items.item(id, db.pool, db.lru).init(ver, data)
 
-	return item, nil
+	return nil
 }

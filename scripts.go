@@ -33,33 +33,12 @@ end
 
 return redis.call('HINCRBY', KEYS[1], '__ver', 1)`)
 
-// KEYS:
-//	- list
-//	- item
-// ARGV:
-//	- id
-//	- deadline
-var purgeItemScript = redis.NewScript(`
-local score = redis.call('ZSCORE', KEYS[1], ARGV[1])
-if score == nil then
-	return 1
-end
-if score < ARGV[2] then
-	redis.call('DEL', KEYS[2])
-	redis.call('ZREM', KEYS[1], ARGV[1])
-	return 1
-end
-return 0`)
-
 func setupScripts(r Redis) error {
 	if err := removeItemScript.Load(r).Err(); err != nil {
 		return errors.Wrap(err, "remove script")
 	}
 	if err := updateItemScript.Load(r).Err(); err != nil {
 		return errors.Wrap(err, "update script")
-	}
-	if err := purgeItemScript.Load(r).Err(); err != nil {
-		return errors.Wrap(err, "purge script")
 	}
 	return nil
 }
