@@ -27,6 +27,11 @@ func (a *Statement) Set(name string, data []byte) {
 	a.upd.Set = append(a.upd.Set, Update_Field{Name: name, Data: data})
 }
 
+// SetString updates a field within string.
+func (a *Statement) SetString(name, data string) {
+	a.Set(name, []byte(data))
+}
+
 // Unset removes a field.
 func (a *Statement) Unset(name string) {
 	if a.upd.Remove {

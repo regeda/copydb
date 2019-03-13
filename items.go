@@ -16,7 +16,7 @@ func (ii items) item(id string, pool Pool, lru *list.List) *item {
 	i, ok := ii[id]
 	if !ok {
 		i = &item{
-			Item: pool.New(id),
+			Item: pool.New(),
 			elem: lru.PushBack(id),
 		}
 		ii[id] = i
@@ -51,12 +51,13 @@ type item struct {
 	version int64
 }
 
-func (i *item) init(version int64, data map[string]string) {
-	i.version = version
+func (i *item) init(unix, version int64, data map[string]string) {
 	i.Remove()
 	for k, v := range data {
 		i.Set(k, []byte(v))
 	}
+	i.unix = unix
+	i.version = version
 }
 
 func (i *item) apply(u *Update) error {

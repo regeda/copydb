@@ -168,12 +168,14 @@ func (db *DB) init() error {
 	if db.ttl > 0 {
 		min = strconv.FormatInt(time.Now().Add(-db.ttl).Unix(), 10)
 	}
-	ids, err := db.loadList(redis.ZRangeBy{Min: min, Max: "+inf"})
+	zz, err := db.loadList(redis.ZRangeBy{Min: min, Max: "+inf"})
 	if err != nil {
 		return errors.Wrap(err, "list failed")
 	}
-	for _, id := range ids {
-		if err := db.loadItem(id); err != nil {
+	for _, z := range zz {
+		id := z.Member.(string)
+		unix := int64(z.Score)
+		if err := db.loadItem(id, unix); err != nil {
 			db.monitor.ApplyFailed(errors.Wrapf(err, "load failed for %s", id))
 			continue
 		}
@@ -193,7 +195,7 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 			return errors.Wrapf(err, "update failed for %s", buf.Id)
 		}
 		db.monitor.VersionConflictDetected(err)
-		if err := db.loadItem(buf.Id); err != nil {
+		if err := db.loadItem(buf.Id, item.unix); err != nil {
 			return errors.Wrapf(err, "refresh failed for %s", buf.Id)
 		}
 	}
@@ -256,11 +258,11 @@ func (db *DB) processUpdate(itemKey string, u *Update) *redis.Cmd {
 	return updateItemScript.Run(db.r, []string{itemKey}, params...)
 }
 
-func (db *DB) loadList(zRangeBy redis.ZRangeBy) ([]string, error) {
-	return db.r.ZRangeByScore(db.keys.list, zRangeBy).Result()
+func (db *DB) loadList(zRangeBy redis.ZRangeBy) ([]redis.Z, error) {
+	return db.r.ZRangeByScoreWithScores(db.keys.list, zRangeBy).Result()
 }
 
-func (db *DB) loadItem(id string) error {
+func (db *DB) loadItem(id string, unix int64) error {
 	itemKey := db.keys.item(id)
 
 	cmd := db.r.HGetAll(itemKey)
@@ -280,7 +282,7 @@ func (db *DB) loadItem(id string) error {
 	}
 	delete(data, "__ver") // version field is treated separately
 
-	db.items.item(id, db.pool, db.lru).init(ver, data)
+	db.items.item(id, db.pool, db.lru).init(unix, ver, data)
 
 	return nil
 }

@@ -6,7 +6,7 @@ import (
 
 // Pool maintains items lifecycle.
 type Pool interface {
-	New(id string) Item
+	New() Item
 	Destroy(Item)
 }
 
@@ -18,24 +18,21 @@ type Item interface {
 }
 
 type defaultPool struct {
-	free []*defaultItem
+	free []DefaultItem
 }
 
-func (p *defaultPool) New(id string) Item {
+func (p *defaultPool) New() Item {
 	freeNum := len(p.free)
-	var i *defaultItem
 	if freeNum > 0 {
-		i = p.free[freeNum-1]
+		i := p.free[freeNum-1]
 		p.free = p.free[:freeNum-1]
-	} else {
-		i = new(defaultItem)
+		return i
 	}
-	i.id = id
-	return i
+	return make(DefaultItem)
 }
 
 func (p *defaultPool) Destroy(i Item) {
-	ii, ok := i.(*defaultItem)
+	ii, ok := i.(DefaultItem)
 	if !ok {
 		panic(fmt.Sprintf("default pool works with default item only, passed %T", i))
 	}
@@ -43,21 +40,34 @@ func (p *defaultPool) Destroy(i Item) {
 	p.free = append(p.free, ii)
 }
 
-type defaultItem struct {
-	id     string
-	fields map[string][]byte
+// ItemField contains a data of a field.
+type ItemField []byte
+
+func (f ItemField) String() string {
+	return string(f)
 }
 
-func (i *defaultItem) Set(name string, data []byte) {
-	i.fields[name] = data
+// DefaultItem implements Item.
+type DefaultItem map[string]ItemField
+
+// Set updates a field by name.
+func (i DefaultItem) Set(name string, data []byte) {
+	i[name] = ItemField(data)
 }
 
-func (i *defaultItem) Unset(name string) {
-	delete(i.fields, name)
+// Unset removes a filed by name.
+func (i DefaultItem) Unset(name string) {
+	delete(i, name)
 }
 
-func (i *defaultItem) Remove() {
-	for name := range i.fields {
-		delete(i.fields, name)
+// Remove resets all fields.
+func (i DefaultItem) Remove() {
+	for name := range i {
+		delete(i, name)
 	}
+}
+
+// IsEmpty checks that the item has no fields.
+func (i DefaultItem) IsEmpty() bool {
+	return len(i) == 0
 }

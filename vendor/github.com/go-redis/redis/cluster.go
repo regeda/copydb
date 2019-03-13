@@ -703,12 +703,12 @@ func (c *ClusterClient) WithContext(ctx context.Context) *ClusterClient {
 	if ctx == nil {
 		panic("nil context")
 	}
-	c2 := c.copy()
+	c2 := c.clone()
 	c2.ctx = ctx
 	return c2
 }
 
-func (c *ClusterClient) copy() *ClusterClient {
+func (c *ClusterClient) clone() *ClusterClient {
 	cp := *c
 	cp.init()
 	return &cp
@@ -862,7 +862,7 @@ func (c *ClusterClient) Watch(fn func(*Tx) error, keys ...string) error {
 			continue
 		}
 
-		if err == pool.ErrClosed {
+		if err == pool.ErrClosed || internal.IsReadOnlyError(err) {
 			node, err = c.slotMasterNode(slot)
 			if err != nil {
 				return err
@@ -960,7 +960,7 @@ func (c *ClusterClient) defaultProcess(cmd Cmder) error {
 			continue
 		}
 
-		if err == pool.ErrClosed {
+		if err == pool.ErrClosed || internal.IsReadOnlyError(err) {
 			node = nil
 			continue
 		}
@@ -1537,10 +1537,13 @@ func (c *ClusterClient) pubSub() *PubSub {
 				panic("node != nil")
 			}
 
-			slot := hashtag.Slot(channels[0])
-
 			var err error
-			node, err = c.slotMasterNode(slot)
+			if len(channels) > 0 {
+				slot := hashtag.Slot(channels[0])
+				node, err = c.slotMasterNode(slot)
+			} else {
+				node, err = c.nodes.Random()
+			}
 			if err != nil {
 				return nil, err
 			}

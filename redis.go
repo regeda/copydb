@@ -5,7 +5,7 @@ import "github.com/go-redis/redis"
 type Redis interface {
 	Pipeline() redis.Pipeliner
 	HGetAll(key string) *redis.StringStringMapCmd
-	ZRangeByScore(key string, opt redis.ZRangeBy) *redis.StringSliceCmd
+	ZRangeByScoreWithScores(key string, opt redis.ZRangeBy) *redis.ZSliceCmd
 	Subscribe(channels ...string) *redis.PubSub
 
 	Eval(script string, keys []string, args ...interface{}) *redis.Cmd
