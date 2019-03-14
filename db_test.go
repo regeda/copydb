@@ -141,7 +141,6 @@ func TestDB_EvictExpired(t *testing.T) {
 			testutil.WaitForError(waitDuration, db, "xxx", ts1.Unix()),
 			"item not found",
 		)
-
 		require.NoError(t,
 			testutil.WaitForItem(waitDuration, db, "yyy", ts2.Unix()),
 		)
@@ -155,14 +154,23 @@ func TestDB_EvictExpired(t *testing.T) {
 		cancel1 := testutil.Serve(t, db1)
 		defer cancel1()
 
-		ts := time.Now()
+		ts1 := time.Now()
 
 		stmt := copydb.NewStatement("xxx")
 		stmt.SetString("foo", "bar")
-		require.NoError(t, stmt.Exec(db1, ts))
+		require.NoError(t, stmt.Exec(db1, ts1))
+
+		ts2 := ts1.Add(ttl * 2)
+
+		stmt = copydb.NewStatement("yyy")
+		stmt.SetString("baz", "quux")
+		require.NoError(t, stmt.Exec(db1, ts2))
 
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db1, "xxx", ts.Unix()),
+			testutil.WaitForItem(waitDuration, db1, "xxx", ts1.Unix()),
+		)
+		require.NoError(t,
+			testutil.WaitForItem(waitDuration, db1, "yyy", ts2.Unix()),
 		)
 
 		time.Sleep(ttl + time.Second)
@@ -173,8 +181,12 @@ func TestDB_EvictExpired(t *testing.T) {
 		defer cancel2()
 
 		require.EqualError(t,
-			testutil.WaitForError(waitDuration, db2, "xxx", ts.Unix()),
+			testutil.WaitForError(waitDuration, db2, "xxx", ts1.Unix()),
 			"item not found",
 		)
+		require.NoError(t,
+			testutil.WaitForItem(waitDuration, db2, "yyy", ts2.Unix()),
+		)
+
 	})
 }
