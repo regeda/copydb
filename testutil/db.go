@@ -25,15 +25,15 @@ func Serve(t *testing.T, db *copydb.DB) context.CancelFunc {
 	return cancel
 }
 
-// WaitFor waits until an identifier will be found in the database.
-func WaitFor(d time.Duration, db *copydb.DB, id string, unix int64, resolve ...copydb.QueryResolve) error {
+// WaitForItem waits until an identifier will be found in the database.
+func WaitForItem(d time.Duration, db *copydb.DB, id string, unix int64, resolve ...copydb.QueryResolve) error {
 	doneCh := make(chan struct{})
 	defer close(doneCh)
 
 	foundCh := make(chan struct{})
 
 	go func() {
-		errCh := make(chan error)
+		errCh := make(chan struct{})
 		for {
 			select {
 			case db.Queries() <- copydb.QueryByID(id, unix,
@@ -43,8 +43,8 @@ func WaitFor(d time.Duration, db *copydb.DB, id string, unix int64, resolve ...c
 						r(item)
 					}
 				},
-				func(err error) {
-					errCh <- err
+				func(error) {
+					errCh <- struct{}{}
 				},
 			):
 			case <-doneCh:
@@ -64,5 +64,44 @@ func WaitFor(d time.Duration, db *copydb.DB, id string, unix int64, resolve ...c
 		return nil
 	case <-time.Tick(d):
 		return errors.New("timeout exceeded")
+	}
+}
+
+// WaitForError waits until an error will be returned.
+func WaitForError(d time.Duration, db *copydb.DB, id string, unix int64) error {
+	doneCh := make(chan struct{})
+	defer close(doneCh)
+
+	errCh := make(chan error)
+
+	go func() {
+		resolveCh := make(chan struct{})
+		for {
+			select {
+			case db.Queries() <- copydb.QueryByID(id, unix,
+				func(copydb.Item) {
+					resolveCh <- struct{}{}
+				},
+				func(err error) {
+					errCh <- err
+				},
+			):
+			case <-doneCh:
+				return
+			}
+
+			select {
+			case <-resolveCh:
+			case <-doneCh:
+				return
+			}
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.Tick(d):
+		return nil
 	}
 }

@@ -110,6 +110,15 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 	return &db, nil
 }
 
+// MustNew creates a new DB. It panics if db setup failed.
+func MustNew(r Redis, opts ...DBOpt) *DB {
+	db, err := New(r, opts...)
+	if err != nil {
+		panic(err.Error())
+	}
+	return db
+}
+
 // Serve subscribes to the channel updates.
 func (db *DB) Serve(ctx context.Context) error {
 	if err := db.init(); err != nil {
@@ -129,7 +138,7 @@ func (db *DB) Serve(ctx context.Context) error {
 
 	var evictChan <-chan time.Time
 	if db.ttl > 0 {
-		ticker := time.NewTicker(db.ttl)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
 		evictChan = ticker.C
