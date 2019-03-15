@@ -17,7 +17,7 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
-		defer db.Stop()
+		defer db.MustStop(waitDuration)
 
 		testutil.Serve(db)
 
@@ -42,7 +42,7 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
-		defer db.Stop()
+		defer db.MustStop(waitDuration)
 
 		testutil.Serve(db)
 
@@ -77,7 +77,7 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
-		defer db.Stop()
+		defer db.MustStop(waitDuration)
 
 		testutil.Serve(db)
 
@@ -114,7 +114,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer db.Stop()
+		defer db.MustStop(waitDuration)
 
 		testutil.Serve(db)
 
@@ -150,7 +150,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db1 := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer db1.Stop()
+		defer db1.MustStop(waitDuration)
 
 		testutil.Serve(db1)
 
@@ -176,7 +176,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		time.Sleep(ttl + time.Second)
 
 		db2 := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer db2.Stop()
+		defer db2.MustStop(waitDuration)
 
 		testutil.Serve(db2)
 
@@ -189,4 +189,66 @@ func TestDB_EvictExpired(t *testing.T) {
 		)
 
 	})
+}
+
+func TestDB_ResolveVersionConflict(t *testing.T) {
+	redis := testutil.NewRedis(t)
+
+	db1 := copydb.MustNew(redis)
+	defer db1.MustStop(waitDuration)
+
+	testutil.Serve(db1)
+
+	db2 := copydb.MustNew(redis)
+	defer db2.MustStop(waitDuration)
+
+	testutil.Serve(db2)
+
+	ts1 := time.Now()
+
+	stmt1 := copydb.NewStatement("xxx")
+	stmt1.SetString("foo", "bar")
+	require.NoError(t, stmt1.Exec(db1, ts1))
+
+	require.NoError(t,
+		testutil.WaitForItem(waitDuration, db1, "xxx", ts1.Unix()),
+	)
+
+	require.NoError(t,
+		testutil.WaitForItem(waitDuration, db2, "xxx", ts1.Unix()),
+	)
+
+	require.NoError(t, db2.Stop(waitDuration))
+
+	ts2 := ts1.Add(time.Second)
+
+	stmt2 := copydb.NewStatement("xxx")
+	stmt2.SetString("baz", "quux")
+	require.NoError(t, stmt2.Exec(db1, ts2))
+
+	require.NoError(t,
+		testutil.WaitForItem(waitDuration, db1, "xxx", ts2.Unix()),
+	)
+
+	testutil.Serve(db2)
+
+	require.EqualError(t,
+		testutil.WaitForError(waitDuration, db2, "xxx", ts2.Unix()),
+		"item not found",
+	)
+
+	ts3 := ts2.Add(time.Second)
+
+	stmt3 := copydb.NewStatement("xxx")
+	stmt3.Unset("foo")
+	require.NoError(t, stmt3.Exec(db1, ts3))
+
+	require.NoError(t,
+		testutil.WaitForItem(waitDuration, db1, "xxx", ts3.Unix()),
+	)
+
+	require.NoError(t,
+		testutil.WaitForItem(waitDuration, db2, "xxx", ts3.Unix()),
+	)
+
 }

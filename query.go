@@ -31,10 +31,10 @@ type queryByID struct {
 
 func (q *queryByID) scan(ii items) {
 	i, ok := ii[q.id]
-	if !ok || i.unix < q.unix {
-		q.reject(ErrItemNotFound)
-	} else {
+	if ok && i.unix >= q.unix {
 		q.resolve(i.Item)
+	} else {
+		q.reject(ErrItemNotFound)
 	}
 }
 

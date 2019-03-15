@@ -170,8 +170,20 @@ func (db *DB) MustServe() {
 }
 
 // Stop terminates serve.
-func (db *DB) Stop() {
-	db.stopCh <- struct{}{}
+func (db *DB) Stop(wait time.Duration) error {
+	select {
+	case db.stopCh <- struct{}{}:
+	case <-time.Tick(wait):
+		return errors.New("timeout exceeded")
+	}
+	return nil
+}
+
+// MustStop terminates serve. It panics if stopping failed.
+func (db *DB) MustStop(wait time.Duration) {
+	if err := db.Stop(wait); err != nil {
+		panic(err.Error())
+	}
 }
 
 // Queries returns a channel to accept queries.
@@ -218,7 +230,7 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 			return errors.Wrapf(err, "update failed for %s", buf.Id)
 		}
 		db.monitor.VersionConflictDetected(err)
-		if err := db.loadItem(buf.Id, item.unix); err != nil {
+		if err := db.loadItem(buf.Id, buf.Unix); err != nil {
 			return errors.Wrapf(err, "refresh failed for %s", buf.Id)
 		}
 	}
