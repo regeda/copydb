@@ -1,28 +1,18 @@
 package testutil
 
 import (
-	"context"
 	"errors"
-	"testing"
 	"time"
 
 	"github.com/regeda/copydb"
 )
 
 // Serve runs DB.Serve with cancellation func.
-func Serve(t *testing.T, db *copydb.DB) context.CancelFunc {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		if err := db.Serve(ctx); err != nil {
-			t.Fatalf("serve failed: %v", err)
-		}
-	}()
+func Serve(db *copydb.DB) {
+	go db.MustServe()
 
 	// wait until queries become acceptable
 	db.Queries() <- copydb.QueryFullScan(func(copydb.Item) {}, func(error) {})
-
-	return cancel
 }
 
 // WaitForItem waits until an identifier will be found in the database.

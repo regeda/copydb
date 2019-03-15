@@ -17,9 +17,9 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
+		defer db.Stop()
 
-		cancel := testutil.Serve(t, db)
-		defer cancel()
+		testutil.Serve(db)
 
 		ts := time.Now()
 
@@ -42,9 +42,9 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
+		defer db.Stop()
 
-		cancel := testutil.Serve(t, db)
-		defer cancel()
+		testutil.Serve(db)
 
 		ts := time.Now()
 
@@ -77,9 +77,9 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
+		defer db.Stop()
 
-		cancel := testutil.Serve(t, db)
-		defer cancel()
+		testutil.Serve(db)
 
 		ts := time.Now()
 
@@ -114,9 +114,9 @@ func TestDB_EvictExpired(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis, copydb.WithTTL(ttl))
+		defer db.Stop()
 
-		cancel := testutil.Serve(t, db)
-		defer cancel()
+		testutil.Serve(db)
 
 		ts1 := time.Now()
 
@@ -131,18 +131,18 @@ func TestDB_EvictExpired(t *testing.T) {
 		require.NoError(t, stmt.Exec(db, ts2))
 
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db, "xxx", ts1.Unix()),
+			testutil.WaitForItem(ttl, db, "xxx", ts1.Unix()),
 		)
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db, "yyy", ts2.Unix()),
+			testutil.WaitForItem(ttl, db, "yyy", ts2.Unix()),
 		)
 
 		require.EqualError(t,
-			testutil.WaitForError(waitDuration, db, "xxx", ts1.Unix()),
+			testutil.WaitForError(ttl, db, "xxx", ts1.Unix()),
 			"item not found",
 		)
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db, "yyy", ts2.Unix()),
+			testutil.WaitForItem(ttl, db, "yyy", ts2.Unix()),
 		)
 	})
 
@@ -150,9 +150,9 @@ func TestDB_EvictExpired(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db1 := copydb.MustNew(redis, copydb.WithTTL(ttl))
+		defer db1.Stop()
 
-		cancel1 := testutil.Serve(t, db1)
-		defer cancel1()
+		testutil.Serve(db1)
 
 		ts1 := time.Now()
 
@@ -167,25 +167,25 @@ func TestDB_EvictExpired(t *testing.T) {
 		require.NoError(t, stmt.Exec(db1, ts2))
 
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db1, "xxx", ts1.Unix()),
+			testutil.WaitForItem(ttl, db1, "xxx", ts1.Unix()),
 		)
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db1, "yyy", ts2.Unix()),
+			testutil.WaitForItem(ttl, db1, "yyy", ts2.Unix()),
 		)
 
 		time.Sleep(ttl + time.Second)
 
 		db2 := copydb.MustNew(redis, copydb.WithTTL(ttl))
+		defer db2.Stop()
 
-		cancel2 := testutil.Serve(t, db2)
-		defer cancel2()
+		testutil.Serve(db2)
 
 		require.EqualError(t,
-			testutil.WaitForError(waitDuration, db2, "xxx", ts1.Unix()),
+			testutil.WaitForError(ttl, db2, "xxx", ts1.Unix()),
 			"item not found",
 		)
 		require.NoError(t,
-			testutil.WaitForItem(waitDuration, db2, "yyy", ts2.Unix()),
+			testutil.WaitForItem(ttl, db2, "yyy", ts2.Unix()),
 		)
 
 	})

@@ -2,7 +2,6 @@ package copydb
 
 import (
 	"container/list"
-	"context"
 	"strconv"
 	"time"
 
@@ -26,6 +25,8 @@ type DB struct {
 
 	ttl time.Duration
 	lru *list.List
+
+	stopCh chan struct{}
 }
 
 // DBOpt configures DB.
@@ -101,10 +102,15 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 		monitor: defaultMonitor,
 		queries: make(chan Query),
 		lru:     list.New(),
+		stopCh:  make(chan struct{}),
 	}
 
 	for _, opt := range opts {
 		opt(&db)
+	}
+
+	if err := db.init(); err != nil {
+		return nil, errors.Wrap(err, "init failed")
 	}
 
 	return &db, nil
@@ -120,11 +126,7 @@ func MustNew(r Redis, opts ...DBOpt) *DB {
 }
 
 // Serve subscribes to the channel updates.
-func (db *DB) Serve(ctx context.Context) error {
-	if err := db.init(); err != nil {
-		return errors.Wrap(err, "init failed")
-	}
-
+func (db *DB) Serve() error {
 	pubsub := db.r.Subscribe(db.keys.channel)
 	if _, err := pubsub.Receive(); err != nil {
 		return errors.Wrap(err, "subscribe failed")
@@ -154,10 +156,22 @@ func (db *DB) Serve(ctx context.Context) error {
 			query.scan(db.items)
 		case now := <-evictChan:
 			db.evictExpired(now)
-		case <-ctx.Done():
+		case <-db.stopCh:
 			return nil
 		}
 	}
+}
+
+// MustServe starts the database. It panics if serve failed.
+func (db *DB) MustServe() {
+	if err := db.Serve(); err != nil {
+		panic(err.Error())
+	}
+}
+
+// Stop terminates serve.
+func (db *DB) Stop() {
+	db.stopCh <- struct{}{}
 }
 
 // Queries returns a channel to accept queries.
