@@ -2,7 +2,13 @@ package copydb
 
 // Query scans items to perform a request.
 type Query interface {
-	scan(items)
+	scan(*DB)
+}
+
+type queryFunc func(*DB)
+
+func (f queryFunc) scan(db *DB) {
+	f(db)
 }
 
 // QueryResolve is a callback with found item.
@@ -14,41 +20,32 @@ type QueryReject func(error)
 // QueryByID creates a query to get an item by identifier.
 // The func accepts unix timestamp if you want to query the item not older than it.
 func QueryByID(id string, unix int64, resolve QueryResolve, reject QueryReject) Query {
-	return &queryByID{id, unix, resolve, reject}
-}
-
-// QueryFullScan create a query to scan all items.
-func QueryFullScan(resolve QueryResolve, reject QueryReject) Query {
-	return &queryFullScan{resolve, reject}
-}
-
-type queryByID struct {
-	id      string
-	unix    int64
-	resolve QueryResolve
-	reject  QueryReject
-}
-
-func (q *queryByID) scan(ii items) {
-	i, ok := ii[q.id]
-	if ok && i.unix >= q.unix {
-		q.resolve(i.Item)
-	} else {
-		q.reject(ErrItemNotFound)
-	}
-}
-
-type queryFullScan struct {
-	resolve QueryResolve
-	reject  QueryReject
-}
-
-func (q *queryFullScan) scan(ii items) {
-	if ii.empty() {
-		q.reject(ErrItemNotFound)
-	} else {
-		for _, i := range ii {
-			q.resolve(i.Item)
+	return queryFunc(func(db *DB) {
+		i, ok := db.items[id]
+		if ok && i.unix >= unix {
+			resolve(i.Item)
+		} else {
+			reject(ErrItemNotFound)
 		}
-	}
+	})
+}
+
+// QueryFullScan creates a query to scan all items.
+func QueryFullScan(resolve QueryResolve, reject QueryReject) Query {
+	return queryFunc(func(db *DB) {
+		if db.items.empty() {
+			reject(ErrItemNotFound)
+		} else {
+			for _, i := range db.items {
+				resolve(i.Item)
+			}
+		}
+	})
+}
+
+// QueryPoolScan creates a query to scan the pool directly.
+func QueryPoolScan(scan func(Pool)) Query {
+	return queryFunc(func(db *DB) {
+		scan(db.pool)
+	})
 }

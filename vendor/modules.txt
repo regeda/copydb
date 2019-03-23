@@ -14,8 +14,16 @@ github.com/go-redis/redis/internal/util
 github.com/gogo/protobuf/gogoproto
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
+# github.com/golang/geo v0.0.0-20181008215305-476085157cff
+github.com/golang/geo/s1
+github.com/golang/geo/s2
+github.com/golang/geo/r1
+github.com/golang/geo/r2
+github.com/golang/geo/r3
 # github.com/golang/protobuf v1.2.0
 github.com/golang/protobuf/proto
+# github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c
+github.com/google/btree
 # github.com/google/uuid v1.1.0
 github.com/google/uuid
 # github.com/mailru/easyjson v0.0.0-20180823135443-60711f1a8329

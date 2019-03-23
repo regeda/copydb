@@ -153,7 +153,7 @@ func (db *DB) Serve() error {
 				db.monitor.ApplyFailed(err)
 			}
 		case query := <-db.queries:
-			query.scan(db.items)
+			query.scan(db)
 		case now := <-evictChan:
 			db.evictExpired(now)
 		case <-db.stopCh:

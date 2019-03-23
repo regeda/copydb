@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"log"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/regeda/copydb"
 	"github.com/regeda/copydb/examples/providers"
+	"github.com/regeda/copydb/indexes/spatial"
 )
 
 var (
@@ -58,6 +58,9 @@ func main() {
 	db, err := copydb.New(cluster,
 		copydb.WithCapacity(*dbCapacity),
 		copydb.WithMonitor(new(monitor)),
+		copydb.WithPool(spatial.NewIndex(13, func() copydb.Item {
+			return make(copydb.DefaultItem)
+		})),
 	)
 	if err != nil {
 		log.Fatalf("failed to create a database: %v", err)
@@ -73,7 +76,7 @@ func main() {
 
 	log.Println("run db...")
 
-	log.Fatal(db.Serve(context.Background()))
+	log.Fatal(db.Serve())
 }
 
 type monitor struct{}
