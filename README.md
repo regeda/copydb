@@ -1,2 +1,2 @@
-= copydb
+# copydb
 
