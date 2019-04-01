@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
-	"github.com/mailru/easyjson"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/regeda/copydb"
@@ -59,7 +59,7 @@ func main() {
 		copydb.WithCapacity(*dbCapacity),
 		copydb.WithMonitor(new(monitor)),
 		copydb.WithPool(spatial.NewIndex(13, func() copydb.Item {
-			return make(copydb.DefaultItem)
+			return make(copydb.SimpleItem)
 		})),
 	)
 	if err != nil {
@@ -108,13 +108,18 @@ func summaryObserve(s prometheus.Summary, now time.Time) {
 func providerHandler(db *copydb.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var in providers.Request
-		if err := easyjson.UnmarshalFromReader(r.Body, &in); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		defer func() {
+			_ = r.Body.Close()
+		}()
+		if err := decoder.Decode(&in); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		if err := applyRequest(db, &in); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 }

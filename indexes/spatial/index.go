@@ -30,14 +30,14 @@ func NewIndex(level int, newItem func() copydb.Item) *Index {
 	}
 }
 
-// New creates an item associated with the index.
-func (idx *Index) New() copydb.Item {
+// Get creates an item associated with the index.
+func (idx *Index) Get() copydb.Item {
 	// @todo item's pool
 	return makeItem(idx)
 }
 
-// Destroy the item from the index.
-func (idx *Index) Destroy(it copydb.Item) {
+// Put the item from the index.
+func (idx *Index) Put(it copydb.Item) {
 	i, ok := it.(*item)
 	if !ok {
 		panic(fmt.Sprintf("spatial index works with spatial item only, passed %T", it))

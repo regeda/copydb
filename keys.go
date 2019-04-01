@@ -2,6 +2,11 @@ package copydb
 
 import "fmt"
 
+const (
+	keyVer = "$ver"
+	keyID  = "$id"
+)
+
 var defaultKeys = keys{
 	itemPattern: "{%s}:item",
 	list:        "items_list",

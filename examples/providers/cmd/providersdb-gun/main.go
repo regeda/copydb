@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -10,8 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mailru/easyjson"
-	geo "github.com/paulmach/go.geo"
+	geojson "github.com/paulmach/go.geojson"
 	"github.com/regeda/copydb/examples/providers"
 )
 
@@ -25,7 +25,7 @@ func main() {
 	flag.Parse()
 
 	for req := range requestsGenerator(*providersCount, *updateSleep) {
-		data, _ := easyjson.Marshal(req)
+		data, _ := json.Marshal(req)
 		resp, err := http.Post(*providerURL, "application/json", bytes.NewReader(data))
 		if err != nil {
 			log.Printf("request failed: %v", err)
@@ -59,7 +59,7 @@ func requestsGenerator(n int, sleep time.Duration) <-chan *providers.Request {
 		ids[i] = uuid.New().String()
 	}
 	requestUpdaters := []requestUpdater{
-		coordRandomizer(),
+		coordRandomizer(-73, 40), // New York
 		statusRandomizer("x", "y", "z"),
 	}
 	outCh := make(chan *providers.Request, n)
@@ -81,13 +81,14 @@ func requestsGenerator(n int, sleep time.Duration) <-chan *providers.Request {
 	return outCh
 }
 
-func coordRandomizer() requestUpdater {
-	var coord providers.Coordinate
+func coordRandomizer(x, y float64) requestUpdater {
+	geom := geojson.Geometry{
+		Type: geojson.GeometryPoint,
+	}
 	return func(r *providers.Request) {
-		coord.Ts = time.Now()
-		coord.Point = geo.Point{rand.Float64(), rand.Float64()}
+		geom.Point = []float64{x + rand.Float64(), y + rand.Float64()}
 
-		r.Set["coord"], _ = easyjson.Marshal(&coord)
+		r.Set["geom"], _ = geom.MarshalJSON()
 	}
 }
 

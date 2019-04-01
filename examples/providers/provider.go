@@ -1,20 +1,13 @@
 package providers
 
 import (
-	"time"
-
-	geo "github.com/paulmach/go.geo"
+	geojson "github.com/paulmach/go.geojson"
 )
 
-type Coordinate struct {
-	Point geo.Point
-	Ts    time.Time
-}
-
 type Provider struct {
-	ID     string
-	Coord  Coordinate
-	Status string
+	ID     string            `json:"id"`
+	Geom   *geojson.Geometry `json:"geom"`
+	Status string            `json:"status"`
 }
 
 func NewProvider(id string) *Provider {

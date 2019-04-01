@@ -4,7 +4,7 @@ package copydb;
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 message Update {
-	string id = 1;
+	string id = 1 [(gogoproto.customname) = "ID"];
 	int64 unix = 2;
 	int64 version = 3;
 

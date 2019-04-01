@@ -10,7 +10,7 @@ import (
 )
 
 func newItem() copydb.Item {
-	return make(copydb.DefaultItem)
+	return make(copydb.SimpleItem)
 }
 
 func TestIndex_NothingFoundIfIndexEmpty(t *testing.T) {
@@ -40,8 +40,8 @@ func TestIndex_NothingFoundIfIndexEmpty(t *testing.T) {
 func TestIndex_FoundNearest(t *testing.T) {
 	idx := spatial.NewIndex(13, newItem)
 
-	a := idx.New()
-	b := idx.New()
+	a := idx.Get()
+	b := idx.Get()
 
 	// nearest
 	a.Set("foo", []byte("bar"))
@@ -62,7 +62,7 @@ func TestIndex_FoundNearest(t *testing.T) {
 		func(item copydb.Item) {
 			found++
 
-			it := item.(copydb.DefaultItem)
+			it := item.(copydb.SimpleItem)
 
 			assert.Equal(t, "bar", it["foo"].String())
 		},
@@ -79,12 +79,12 @@ func TestIndex_FoundNearest(t *testing.T) {
 func TestIndex_NothingFoundAfterItemDestroyed(t *testing.T) {
 	idx := spatial.NewIndex(13, newItem)
 
-	a := idx.New()
+	a := idx.Get()
 
 	a.Set("foo", []byte("bar"))
 	a.Set("geom", []byte(`{"type":"Point","coordinates":[-73.98841112852097,40.73780734529185]}`))
 
-	idx.Destroy(a)
+	idx.Put(a)
 
 	var err error
 
@@ -110,7 +110,7 @@ func TestIndex_NothingFoundAfterItemDestroyed(t *testing.T) {
 func TestIndex_NothingFoundIfGeomRemoved(t *testing.T) {
 	idx := spatial.NewIndex(13, newItem)
 
-	a := idx.New()
+	a := idx.Get()
 
 	a.Set("foo", []byte("bar"))
 	a.Set("geom", []byte(`{"type":"Point","coordinates":[-73.98841112852097,40.73780734529185]}`))

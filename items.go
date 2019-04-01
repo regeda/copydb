@@ -16,7 +16,7 @@ func (ii items) item(id string, pool Pool, lru *list.List) *item {
 	i, ok := ii[id]
 	if !ok {
 		i = &item{
-			Item: pool.New(),
+			Item: pool.Get(),
 			elem: lru.PushBack(id),
 		}
 		ii[id] = i
@@ -37,7 +37,7 @@ func (ii items) evict(deadline int64, pool Pool, lru *list.List) bool {
 		return false
 	}
 	lru.Remove(i.elem)
-	pool.Destroy(i.Item)
+	pool.Put(i.Item)
 	delete(ii, id)
 	return true
 }
@@ -62,7 +62,7 @@ func (i *item) init(unix, version int64, data map[string]string) {
 
 func (i *item) apply(u *Update) error {
 	if u.Version-i.version > 1 {
-		return errors.Wrapf(ErrVersionConflict, "update version (%d) is greater db version (%d) for %s", u.Version, i.version, u.Id)
+		return errors.Wrapf(ErrVersionConflict, "update version (%d) is greater db version (%d) for %s", u.Version, i.version, u.ID)
 	}
 	if u.Remove {
 		i.Remove()
@@ -73,6 +73,7 @@ func (i *item) apply(u *Update) error {
 		for _, f := range u.Unset {
 			i.Unset(f.Name)
 		}
+		i.Set(keyID, []byte(u.ID))
 	}
 	i.unix = u.Unix
 	i.version = u.Version

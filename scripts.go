@@ -6,11 +6,11 @@ import (
 )
 
 var removeItemScript = redis.NewScript(`
-local v = redis.call('HGET', KEYS[1], '__ver')
+local v = redis.call('HGET', KEYS[1], '` + keyVer + `')
 if redis.call('DEL', KEYS[1]) == 0 then
 	return 0
 end
-return redis.call('HINCRBY', KEYS[1], '__ver', v+1)`)
+return redis.call('HINCRBY', KEYS[1], '` + keyVer + `', v+1)`)
 
 var updateItemScript = redis.NewScript(`
 local proto_set_len = 2*ARGV[1] -- key/value pairs
@@ -31,7 +31,7 @@ for i=1,proto_unset_len do
 	redis.call('HDEL', KEYS[1], ARGV[proto_argv_offset+i])
 end
 
-return redis.call('HINCRBY', KEYS[1], '__ver', 1)`)
+return redis.call('HINCRBY', KEYS[1], '` + keyVer + `', 1)`)
 
 func setupScripts(r Redis) error {
 	if err := removeItemScript.Load(r).Err(); err != nil {

@@ -29,7 +29,7 @@ func TestDB_Replicate(t *testing.T) {
 		require.NoError(t, stmt.Exec(db, ts))
 
 		err := testutil.WaitForItem(waitDuration, db, "xxx", ts.Unix(), func(item copydb.Item) {
-			i := item.(copydb.DefaultItem)
+			i := item.(copydb.SimpleItem)
 
 			assert.Equal(t, "bar", i["foo"].String())
 			assert.Equal(t, "quux", i["baz"].String())
@@ -63,7 +63,7 @@ func TestDB_Replicate(t *testing.T) {
 		require.NoError(t, stmt.Exec(db, ts))
 
 		err = testutil.WaitForItem(waitDuration, db, "yyy", ts.Unix(), func(item copydb.Item) {
-			i := item.(copydb.DefaultItem)
+			i := item.(copydb.SimpleItem)
 
 			_, ok := i["foo"]
 			assert.False(t, ok)
@@ -98,7 +98,7 @@ func TestDB_Replicate(t *testing.T) {
 		require.NoError(t, stmt.Exec(db, ts))
 
 		err = testutil.WaitForItem(waitDuration, db, "zzz", ts.Unix(), func(item copydb.Item) {
-			i := item.(copydb.DefaultItem)
+			i := item.(copydb.SimpleItem)
 
 			assert.True(t, i.IsEmpty())
 		})

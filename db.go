@@ -95,10 +95,14 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 	}
 
 	db := DB{
-		r:       r,
-		items:   make(items),
-		keys:    defaultKeys,
-		pool:    new(defaultPool),
+		r:     r,
+		items: make(items),
+		keys:  defaultKeys,
+		pool: &SimplePool{
+			New: func() Item {
+				return make(SimpleItem)
+			},
+		},
 		monitor: defaultMonitor,
 		queries: make(chan Query),
 		lru:     list.New(),
@@ -223,15 +227,15 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 		return errors.Wrap(err, "unmarshal failed")
 	}
 
-	item := db.items.item(buf.Id, db.pool, db.lru)
+	item := db.items.item(buf.ID, db.pool, db.lru)
 
 	if err := item.apply(buf); err != nil {
 		if errors.Cause(err) != ErrVersionConflict {
-			return errors.Wrapf(err, "update failed for %s", buf.Id)
+			return errors.Wrapf(err, "update failed for %s", buf.ID)
 		}
 		db.monitor.VersionConflictDetected(err)
-		if err := db.loadItem(buf.Id, buf.Unix); err != nil {
-			return errors.Wrapf(err, "refresh failed for %s", buf.Id)
+		if err := db.loadItem(buf.ID, buf.Unix); err != nil {
+			return errors.Wrapf(err, "refresh failed for %s", buf.ID)
 		}
 	}
 
@@ -239,7 +243,7 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 }
 
 func (db *DB) replicate(u *Update) error {
-	itemKey := db.keys.item(u.Id)
+	itemKey := db.keys.item(u.ID)
 
 	var res *redis.Cmd
 	if u.Remove {
@@ -267,7 +271,7 @@ func (db *DB) replicate(u *Update) error {
 	pipe := db.r.Pipeline()
 	pipe.ZAdd(db.keys.list, redis.Z{
 		Score:  float64(u.Unix),
-		Member: u.Id,
+		Member: u.ID,
 	})
 	pipe.Publish(db.keys.channel, data)
 	_, err = pipe.Exec()
@@ -307,7 +311,7 @@ func (db *DB) loadItem(id string, unix int64) error {
 
 	data := cmd.Val()
 
-	rawver, ok := data["__ver"]
+	rawver, ok := data[keyVer]
 	if !ok {
 		return ErrVersionNotFound
 	}
@@ -315,7 +319,7 @@ func (db *DB) loadItem(id string, unix int64) error {
 	if err != nil {
 		return errors.Wrap(err, "wrong version format")
 	}
-	delete(data, "__ver") // version field is treated separately
+	delete(data, keyVer) // version field is treated separately
 
 	db.items.item(id, db.pool, db.lru).init(unix, ver, data)
 

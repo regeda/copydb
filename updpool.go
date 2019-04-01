@@ -10,7 +10,7 @@ var updpool = sync.Pool{
 
 func allocUpdate(id string) *Update {
 	u := updpool.Get().(*Update)
-	u.Id = id
+	u.ID = id
 	return u
 }
 

@@ -1,13 +1,9 @@
 package copydb
 
-import (
-	"fmt"
-)
-
 // Pool maintains items lifecycle.
 type Pool interface {
-	New() Item
-	Destroy(Item)
+	Get() Item
+	Put(Item)
 }
 
 // Item contains functions for data manipulation.
@@ -17,27 +13,28 @@ type Item interface {
 	Remove()
 }
 
-type defaultPool struct {
-	free []DefaultItem
+// SimplePool implements Pool.
+type SimplePool struct {
+	free []Item
+
+	New func() Item
 }
 
-func (p *defaultPool) New() Item {
+// Get returns a new Item.
+func (p *SimplePool) Get() Item {
 	freeNum := len(p.free)
 	if freeNum > 0 {
 		i := p.free[freeNum-1]
 		p.free = p.free[:freeNum-1]
 		return i
 	}
-	return make(DefaultItem)
+	return p.New()
 }
 
-func (p *defaultPool) Destroy(i Item) {
-	ii, ok := i.(DefaultItem)
-	if !ok {
-		panic(fmt.Sprintf("default pool works with default item only, passed %T", i))
-	}
-	ii.Remove()
-	p.free = append(p.free, ii)
+// Put saves an item in the pool.
+func (p *SimplePool) Put(i Item) {
+	i.Remove()
+	p.free = append(p.free, i)
 }
 
 // ItemField contains a data of a field.
@@ -47,27 +44,27 @@ func (f ItemField) String() string {
 	return string(f)
 }
 
-// DefaultItem implements Item.
-type DefaultItem map[string]ItemField
+// SimpleItem implements Item.
+type SimpleItem map[string]ItemField
 
 // Set updates a field by name.
-func (i DefaultItem) Set(name string, data []byte) {
+func (i SimpleItem) Set(name string, data []byte) {
 	i[name] = ItemField(data)
 }
 
 // Unset removes a filed by name.
-func (i DefaultItem) Unset(name string) {
+func (i SimpleItem) Unset(name string) {
 	delete(i, name)
 }
 
 // Remove resets all fields.
-func (i DefaultItem) Remove() {
+func (i SimpleItem) Remove() {
 	for name := range i {
 		delete(i, name)
 	}
 }
 
 // IsEmpty checks that the item has no fields.
-func (i DefaultItem) IsEmpty() bool {
+func (i SimpleItem) IsEmpty() bool {
 	return len(i) == 0
 }
