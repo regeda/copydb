@@ -13,10 +13,6 @@ type queueItem struct {
 
 type itemsQueue []queueItem
 
-func newItemsQueue(capacity int) itemsQueue {
-	return make([]queueItem, 0, capacity+1)
-}
-
 func (q itemsQueue) Len() int { return len(q) }
 
 func (q itemsQueue) Less(i, j int) bool { return q[i].angle > q[j].angle }
@@ -25,6 +21,10 @@ func (q itemsQueue) Swap(i, j int) {
 	q[i], q[j] = q[j], q[i]
 	q[i].i = i
 	q[j].i = j
+}
+
+func (q *itemsQueue) reset() {
+	*q = (*q)[:0]
 }
 
 func (q *itemsQueue) Push(x interface{}) {

@@ -6,130 +6,104 @@ import (
 
 	"github.com/golang/geo/s1"
 	"github.com/golang/geo/s2"
-	"github.com/google/btree"
 	"github.com/regeda/copydb"
 )
 
-const earthRadiusM = 6378137.
+const earthRadiusM = 6371010.
 
 var _ copydb.Pool = &Index{}
 
 // Index implements Geospatial index over copydb.Pool.
 type Index struct {
+	*copydb.SimplePool
+
 	level   int
-	newItem func() copydb.Item
-	bt      *btree.BTree
+	grid    map[s2.CellID]cell
+	visitor visitor
 }
 
 // NewIndex creates the index.
 func NewIndex(level int, newItem func() copydb.Item) *Index {
-	return &Index{
-		level:   level,
-		bt:      btree.New(2), // @todo figure out the proper value
-		newItem: newItem,
-	}
-}
-
-// Get creates an item associated with the index.
-func (idx *Index) Get() copydb.Item {
-	// @todo item's pool
-	return makeItem(idx)
-}
-
-// Put the item from the index.
-func (idx *Index) Put(it copydb.Item) {
-	i, ok := it.(*item)
-	if !ok {
-		panic(fmt.Sprintf("spatial index works with spatial item only, passed %T", it))
-	}
-	if i.idx != idx {
-		panic("item was created by another index")
+	idx := &Index{
+		level: level,
+		grid:  make(map[s2.CellID]cell),
 	}
 
-	i.Remove()
+	idx.SimplePool = &copydb.SimplePool{
+		New: func() copydb.Item {
+			return makeItem(idx, newItem())
+		},
+	}
+
+	return idx
 }
 
 func (idx *Index) remove(it *item) {
-	if !it.isIndexed() {
-		return
-	}
-
-	bitem := idx.bt.Get(makeNode(it.cellID))
-	if bitem != nil {
-		n := bitem.(*node)
-		n.remove(it)
-		if n.isEmpty() {
-			idx.bt.Delete(bitem)
-		}
+	if c, ok := idx.grid[it.cellID]; ok {
+		c.remove(it)
 	}
 }
 
-func (idx *Index) move(it *item, lon, lat float64) (s2.LatLng, s2.CellID) {
-	idx.remove(it)
-	return idx.add(it, lon, lat)
-}
-
-func (idx *Index) add(it *item, lon, lat float64) (s2.LatLng, s2.CellID) {
+func (idx *Index) move(it *item, lon, lat float64) {
 	latlng := s2.LatLngFromDegrees(lat, lon)
-	cellID := s2.CellIDFromLatLng(latlng)
-	cellIDOnStorageLevel := cellID.Parent(idx.level)
+	cellID := s2.CellIDFromLatLng(latlng).Parent(idx.level)
 
-	n := makeNode(cellIDOnStorageLevel)
+	if it.cellID != cellID {
+		idx.remove(it)
 
-	bitem := idx.bt.Get(n)
-	if bitem != nil {
-		n = bitem.(*node)
+		c, ok := idx.grid[cellID]
+		if !ok {
+			c = make(cell)
+			idx.grid[cellID] = c
+		}
+
+		c.add(it)
 	}
 
-	n.add(it)
-
-	idx.bt.ReplaceOrInsert(n)
-
-	return latlng, cellIDOnStorageLevel
+	it.latlng = latlng
+	it.cellID = cellID
 }
 
-// @todo introduce max results and filter function
 func (idx *Index) search(req SearchRequest, resolve copydb.QueryResolve, reject copydb.QueryReject) {
-	latlng := s2.LatLngFromDegrees(req.Lat, req.Lon)
-	centerAngle := s1.Angle(req.Radius / earthRadiusM)
+	idx.visitor.angle = s1.Angle(req.Radius / earthRadiusM)
+	idx.visitor.latlng = s2.LatLngFromDegrees(req.Lat, req.Lon)
+	idx.visitor.k = req.Limit
 
-	cap := s2.CapFromCenterAngle(s2.PointFromLatLng(latlng), centerAngle)
-	rc := s2.RegionCoverer{MaxLevel: idx.level}
-	cu := rc.Covering(cap)
-
-	visitor := visitor{
-		angle:   centerAngle,
-		latlng:  latlng,
-		closest: newItemsQueue(req.Limit),
-		k:       req.Limit,
+	if idx.visitor.k == 0 {
+		idx.visitor.k = int(math.MaxInt32)
 	}
 
-	if visitor.k == 0 {
-		visitor.k = int(math.MaxInt32)
-	}
+	cellID := s2.CellIDFromLatLng(idx.visitor.latlng).Parent(idx.level)
 
-	for _, cellID := range cu {
-		if cellID.Level() < idx.level {
-			begin := cellID.ChildBeginAtLevel(idx.level)
-			end := cellID.ChildEndAtLevel(idx.level)
-			idx.bt.AscendRange(makeNode(begin), makeNode(end.Next()), func(bitem btree.Item) bool {
-				visitor.visit(bitem.(*node).items)
-				return true
-			})
-		} else {
-			bitem := idx.bt.Get(makeNode(cellID))
-			if bitem != nil {
-				visitor.visit(bitem.(*node).items)
+	visited := make(map[s2.CellID]struct{})
+	walk := []s2.CellID{cellID}
+
+	for cursor := 0; cursor < len(walk); cursor++ {
+		cellID = walk[cursor]
+
+		if c, ok := idx.grid[cellID]; ok {
+			idx.visitor.visit(c)
+		}
+
+		visited[cellID] = struct{}{}
+
+		for _, cid := range cellID.EdgeNeighbors() {
+			if _, ok := visited[cid]; ok {
+				continue
+			}
+			if cid.LatLng().Distance(idx.visitor.latlng) < idx.visitor.angle {
+				walk = append(walk, cid)
 			}
 		}
 	}
 
-	if visitor.closest.Len() == 0 {
+	if idx.visitor.closest.Len() == 0 {
 		reject(copydb.ErrItemNotFound)
 	} else {
-		for _, v := range visitor.closest {
+		for _, v := range idx.visitor.closest {
 			resolve(v.Item)
 		}
+		idx.visitor.closest.reset()
 	}
 }
 

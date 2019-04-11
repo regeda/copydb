@@ -1,6 +1,8 @@
 package spatial_test
 
 import (
+	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/regeda/copydb"
@@ -22,7 +24,7 @@ func TestIndex_NothingFoundIfIndexEmpty(t *testing.T) {
 		spatial.SearchRequest{
 			Lon:    -73.98914,
 			Lat:    40.73769,
-			Radius: 1e5,
+			Radius: 10000,
 		},
 		func(copydb.Item) {
 			assert.FailNow(t, "no items should be found")
@@ -92,7 +94,7 @@ func TestIndex_NothingFoundAfterItemDestroyed(t *testing.T) {
 		spatial.SearchRequest{
 			Lon:    -73.98914,
 			Lat:    40.73769,
-			Radius: 1e5,
+			Radius: 10000,
 		},
 		func(copydb.Item) {
 			assert.FailNow(t, "no items should be found")
@@ -123,7 +125,7 @@ func TestIndex_NothingFoundIfGeomRemoved(t *testing.T) {
 		spatial.SearchRequest{
 			Lon:    -73.98914,
 			Lat:    40.73769,
-			Radius: 1e5,
+			Radius: 2000,
 		},
 		func(copydb.Item) {
 			assert.FailNow(t, "no items should be found")
@@ -136,4 +138,32 @@ func TestIndex_NothingFoundIfGeomRemoved(t *testing.T) {
 	query(idx)
 
 	assert.EqualError(t, err, "item not found")
+}
+
+// BenchmarkIndex_Search-4            10000            104179 ns/op            3786 B/op         28 allocs/op
+func BenchmarkIndex_Search(b *testing.B) {
+	idx := spatial.NewIndex(13, newItem)
+
+	for i := 0; i < 2000; i++ {
+		a := idx.Get()
+		a.Set("geom", []byte(fmt.Sprintf(`{"type":"Point","coordinates":[%g,%g]}`, -73+rand.Float64(), 40+rand.Float64())))
+	}
+
+	query := spatial.Search(
+		spatial.SearchRequest{
+			Lon:    -73 + rand.Float64(),
+			Lat:    40 + rand.Float64(),
+			Radius: 10000,
+			Limit:  10,
+		},
+		func(copydb.Item) {
+		},
+		func(error) {
+		},
+	)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		query(idx)
+	}
 }

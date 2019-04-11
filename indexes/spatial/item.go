@@ -9,23 +9,18 @@ import (
 var _ copydb.Item = &item{}
 
 type item struct {
-	copydb.Item
-
+	it     copydb.Item
 	idx    *Index
 	cellID s2.CellID
 	latlng s2.LatLng
 }
 
-func makeItem(idx *Index) *item {
+func makeItem(idx *Index, it copydb.Item) *item {
 	return &item{
 		idx:    idx,
-		Item:   idx.newItem(),
+		it:     it,
 		cellID: s2.SentinelCellID,
 	}
-}
-
-func (i *item) isIndexed() bool {
-	return i.cellID != s2.SentinelCellID
 }
 
 func (i *item) Set(name string, data []byte) {
@@ -33,15 +28,16 @@ func (i *item) Set(name string, data []byte) {
 	case "geom":
 		geom, err := geojson.UnmarshalGeometry(data)
 		if err == nil && geom.IsPoint() {
-			i.latlng, i.cellID = i.idx.move(i, geom.Point[0], geom.Point[1])
+			i.idx.move(i, geom.Point[0], geom.Point[1])
 		}
 	}
-	i.Item.Set(name, data)
+	i.it.Set(name, data)
 }
 
 func (i *item) detachFromS2() {
 	i.idx.remove(i)
 	i.cellID = s2.SentinelCellID
+	i.latlng = s2.LatLng{}
 }
 
 func (i *item) Unset(name string) {
@@ -49,10 +45,10 @@ func (i *item) Unset(name string) {
 	case "geom":
 		i.detachFromS2()
 	}
-	i.Item.Unset(name)
+	i.it.Unset(name)
 }
 
 func (i *item) Remove() {
 	i.detachFromS2()
-	i.Item.Remove()
+	i.it.Remove()
 }

@@ -12,7 +12,7 @@ func Serve(db *copydb.DB) {
 	go db.MustServe()
 
 	// wait until queries become acceptable
-	db.Queries() <- copydb.QueryFullScan(func(copydb.Item) {}, func(error) {})
+	db.Queries() <- copydb.QueryAll(func(copydb.Item) {}, func(error) {})
 }
 
 // WaitForItem waits until an identifier will be found in the database.

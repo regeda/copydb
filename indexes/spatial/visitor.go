@@ -14,11 +14,11 @@ type visitor struct {
 	closest itemsQueue
 }
 
-func (v *visitor) visit(ii []*item) {
-	for _, i := range ii {
+func (v *visitor) visit(c cell) {
+	for i := range c {
 		dist := i.latlng.Distance(v.latlng)
 		if dist < v.angle {
-			heap.Push(&v.closest, queueItem{Item: i.Item, angle: dist})
+			heap.Push(&v.closest, queueItem{Item: i.it, angle: dist})
 			if v.closest.Len() > v.k {
 				heap.Pop(&v.closest)
 

@@ -30,8 +30,8 @@ func QueryByID(id string, unix int64, resolve QueryResolve, reject QueryReject) 
 	})
 }
 
-// QueryFullScan creates a query to scan all items.
-func QueryFullScan(resolve QueryResolve, reject QueryReject) Query {
+// QueryAll creates a query to scan all items.
+func QueryAll(resolve QueryResolve, reject QueryReject) Query {
 	return queryFunc(func(db *DB) {
 		if db.items.empty() {
 			reject(ErrItemNotFound)
@@ -43,8 +43,8 @@ func QueryFullScan(resolve QueryResolve, reject QueryReject) Query {
 	})
 }
 
-// QueryPoolScan creates a query to scan the pool directly.
-func QueryPoolScan(scan func(Pool)) Query {
+// QueryPool creates a query to scan the pool directly.
+func QueryPool(scan func(Pool)) Query {
 	return queryFunc(func(db *DB) {
 		scan(db.pool)
 	})
