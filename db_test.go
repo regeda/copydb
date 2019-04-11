@@ -138,7 +138,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		)
 
 		require.EqualError(t,
-			testutil.WaitForError(ttl, db, "xxx", ts1.Unix()),
+			testutil.WaitForError(ttl+time.Second, db, "xxx", ts1.Unix()),
 			"item not found",
 		)
 		require.NoError(t,
