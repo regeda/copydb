@@ -68,6 +68,7 @@ func (idx *Index) search(req SearchRequest, resolve copydb.QueryResolve, reject 
 	idx.visitor.angle = s1.Angle(req.Radius / earthRadiusM)
 	idx.visitor.latlng = s2.LatLngFromDegrees(req.Lat, req.Lon)
 	idx.visitor.k = req.Limit
+	idx.visitor.filter = req.Filter
 
 	if idx.visitor.k == 0 {
 		idx.visitor.k = int(math.MaxInt32)
@@ -75,24 +76,25 @@ func (idx *Index) search(req SearchRequest, resolve copydb.QueryResolve, reject 
 
 	cellID := s2.CellIDFromLatLng(idx.visitor.latlng).Parent(idx.level)
 
-	visited := make(map[s2.CellID]struct{})
+	visited := make(map[s2.CellID]bool)
 	walk := []s2.CellID{cellID}
 
 	for cursor := 0; cursor < len(walk); cursor++ {
 		cellID = walk[cursor]
 
+		if visited[cellID] {
+			continue
+		}
+
 		if c, ok := idx.grid[cellID]; ok {
 			idx.visitor.visit(c)
 		}
 
-		visited[cellID] = struct{}{}
+		visited[cellID] = true
 
-		for _, cid := range cellID.EdgeNeighbors() {
-			if _, ok := visited[cid]; ok {
-				continue
-			}
-			if cid.LatLng().Distance(idx.visitor.latlng) < idx.visitor.angle {
-				walk = append(walk, cid)
+		for _, cellID := range cellID.EdgeNeighbors() {
+			if !visited[cellID] && cellID.LatLng().Distance(idx.visitor.latlng) < idx.visitor.angle {
+				walk = append(walk, cellID)
 			}
 		}
 	}
@@ -112,6 +114,7 @@ type SearchRequest struct {
 	Lon, Lat float64
 	Radius   float64
 	Limit    int
+	Filter   func(copydb.Item) bool
 }
 
 // Search returns items by a coordinate and a radius.
