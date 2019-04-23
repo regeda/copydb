@@ -1,7 +1,7 @@
 module github.com/regeda/copydb
 
 require (
-	github.com/go-redis/redis v6.15.3-0.20190410132547-292bdd823051+incompatible
+	github.com/go-redis/redis v6.15.3-0.20190422135758-322709108784+incompatible
 	github.com/gogo/protobuf v1.2.0
 	github.com/golang/geo v0.0.0-20181008215305-476085157cff
 	github.com/google/uuid v1.1.0

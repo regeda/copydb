@@ -2,7 +2,7 @@
 github.com/beorn7/perks/quantile
 # github.com/davecgh/go-spew v1.1.0
 github.com/davecgh/go-spew/spew
-# github.com/go-redis/redis v6.15.3-0.20190410132547-292bdd823051+incompatible
+# github.com/go-redis/redis v6.15.3-0.20190422135758-322709108784+incompatible
 github.com/go-redis/redis
 github.com/go-redis/redis/internal
 github.com/go-redis/redis/internal/consistenthash

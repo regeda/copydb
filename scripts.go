@@ -18,7 +18,7 @@ local proto_unset_len = ARGV[2]
 local proto_argv_offset = 2
 
 if proto_set_len+proto_unset_len ~= table.getn(ARGV)-proto_argv_offset then
-	return {err="wrong arguments count"}
+	return redis.error_reply("wrong arguments count")
 end
 
 for i=1,proto_set_len,2 do

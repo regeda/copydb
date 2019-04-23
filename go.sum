@@ -4,8 +4,8 @@ github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/fsnotify/fsnotify v1.4.7 h1:IXs+QLmnXW2CcXuY+8Mzv/fWEsPGWxqefPtCP5CnV9I=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
-github.com/go-redis/redis v6.15.3-0.20190410132547-292bdd823051+incompatible h1:oAhug05FpnFVUA6OAZA+jpN5PNTMTKPBL+HbdYCiHc0=
-github.com/go-redis/redis v6.15.3-0.20190410132547-292bdd823051+incompatible/go.mod h1:NAIEuMOZ/fxfXJIrKDQDz8wamY7mA7PouImQ2Jvg6kA=
+github.com/go-redis/redis v6.15.3-0.20190422135758-322709108784+incompatible h1:pRmycyza2kjzsMcqMtdUF+7Q0KU+QK/UHxsS01fnBk0=
+github.com/go-redis/redis v6.15.3-0.20190422135758-322709108784+incompatible/go.mod h1:NAIEuMOZ/fxfXJIrKDQDz8wamY7mA7PouImQ2Jvg6kA=
 github.com/gogo/protobuf v1.2.0 h1:xU6/SpYbvkNYiptHJYEDRseDLvYE7wSqhYYNy0QSUzI=
 github.com/gogo/protobuf v1.2.0/go.mod h1:r8qH/GZQm5c6nD/R0oafs1akxWv10x8SbQlK7atdtwQ=
 github.com/golang/geo v0.0.0-20181008215305-476085157cff h1:JkeTBbgV6+IWNqy4SR8MV4mj2scYNCEgSvkPJjmh8Cs=

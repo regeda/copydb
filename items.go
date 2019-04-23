@@ -23,6 +23,7 @@ func (ii items) item(id string, pool Pool, lru *list.List) *item {
 	} else {
 		lru.MoveToBack(i.elem)
 	}
+	i.Set(keyID, []byte(id))
 	return i
 }
 
@@ -73,7 +74,6 @@ func (i *item) apply(u *Update) error {
 		for _, f := range u.Unset {
 			i.Unset(f.Name)
 		}
-		i.Set(keyID, []byte(u.ID))
 	}
 	i.unix = u.Unix
 	i.version = u.Version
