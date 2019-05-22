@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -32,16 +33,18 @@ var (
 		Objectives: defSummaryObjectives,
 		MaxAge:     defMaxAge,
 	})
-	versionConflictCounter = prometheus.NewCounter(prometheus.CounterOpts{Name: "version_conflict"})
 )
 
 func init() {
 	prometheus.MustRegister(providerHandlerDurationSummary)
-	prometheus.MustRegister(versionConflictCounter)
 }
 
 func main() {
 	flag.Parse()
+
+	log := log.New(os.Stdout, "providersdb: ", log.Lshortfile|log.LstdFlags)
+
+	redis.SetLogger(log)
 
 	redisOpts := redis.ClusterOptions{
 		Addrs:       []string{*redisHost},
@@ -57,7 +60,7 @@ func main() {
 
 	db, err := copydb.New(cluster,
 		copydb.WithCapacity(*dbCapacity),
-		copydb.WithMonitor(new(monitor)),
+		copydb.WithLogger(log),
 		copydb.WithPool(spatial.NewIndex(13, func() copydb.Item {
 			return make(copydb.SimpleItem)
 		})),
@@ -77,21 +80,6 @@ func main() {
 	log.Println("run db...")
 
 	log.Fatal(db.Serve())
-}
-
-type monitor struct{}
-
-func (m *monitor) VersionConflictDetected(err error) {
-	versionConflictCounter.Inc()
-	log.Printf("ERROR: %v", err)
-}
-
-func (m *monitor) ApplyFailed(err error) {
-	log.Printf("ERROR: %v", err)
-}
-
-func (m *monitor) PurgeFailed(err error) {
-	log.Printf("ERROR: %v", err)
 }
 
 func observeHandler(h http.Handler, s prometheus.Summary) http.HandlerFunc {

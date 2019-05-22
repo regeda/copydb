@@ -2,6 +2,8 @@ package copydb
 
 import (
 	"container/list"
+	"log"
+	"os"
 	"strconv"
 	"time"
 
@@ -19,14 +21,15 @@ type DB struct {
 
 	pool Pool
 
-	monitor Monitor
-
 	queries chan Query
 
 	ttl time.Duration
 	lru *list.List
 
 	stopCh chan struct{}
+
+	stats  Stats
+	logger *log.Logger
 }
 
 // DBOpt configures DB.
@@ -60,13 +63,6 @@ func WithCapacity(c int) DBOpt {
 	}
 }
 
-// WithMonitor configures a monitor.
-func WithMonitor(m Monitor) DBOpt {
-	return func(db *DB) {
-		db.monitor = m
-	}
-}
-
 // WithPool configures items pool.
 func WithPool(pool Pool) DBOpt {
 	return func(db *DB) {
@@ -88,6 +84,13 @@ func WithTTL(d time.Duration) DBOpt {
 	}
 }
 
+// WithLogger configures a logger.
+func WithLogger(logger *log.Logger) DBOpt {
+	return func(db *DB) {
+		db.logger = logger
+	}
+}
+
 // New creates a new DB.
 func New(r Redis, opts ...DBOpt) (*DB, error) {
 	if err := setupScripts(r); err != nil {
@@ -103,10 +106,10 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 				return make(SimpleItem)
 			},
 		},
-		monitor: defaultMonitor,
 		queries: make(chan Query),
 		lru:     list.New(),
 		stopCh:  make(chan struct{}),
+		logger:  log.New(os.Stderr, "copydb: ", log.LstdFlags|log.Lshortfile),
 	}
 
 	for _, opt := range opts {
@@ -154,10 +157,14 @@ func (db *DB) Serve() error {
 		select {
 		case msg := <-ch:
 			if err := db.apply([]byte(msg.Payload), &buf); err != nil {
-				db.monitor.ApplyFailed(err)
+				db.logger.Println(err)
+				db.stats.ItemsFailed++
+			} else {
+				db.stats.ItemsApplied++
 			}
 		case query := <-db.queries:
 			query.scan(db)
+			db.stats.DBScanned++
 		case now := <-evictChan:
 			db.evictExpired(now)
 		case <-db.stopCh:
@@ -178,7 +185,7 @@ func (db *DB) Stop(wait time.Duration) error {
 	select {
 	case db.stopCh <- struct{}{}:
 	case <-time.Tick(wait):
-		return errors.New("timeout exceeded")
+		return ErrTimeoutExceeded
 	}
 	return nil
 }
@@ -190,15 +197,37 @@ func (db *DB) MustStop(wait time.Duration) {
 	}
 }
 
-// Queries returns a channel to accept queries.
-func (db *DB) Queries() chan<- Query {
+// Query runs a query and waits for scan completion.
+func (db *DB) Query(q Query, deadline <-chan time.Time) error {
+	done := make(chan struct{})
+
+	select {
+	case db.queries <- queryFunc(func(db *DB) {
+		defer close(done)
+		q.scan(db)
+	}):
+	case <-deadline:
+		return ErrTimeoutExceeded
+	}
+
+	select {
+	case <-done:
+	case <-deadline:
+		return ErrTimeoutExceeded
+	}
+	return nil
+}
+
+// QueriesIn returns a channel to accept queries.
+func (db *DB) QueriesIn() chan<- Query {
 	return db.queries
 }
 
 func (db *DB) evictExpired(t time.Time) {
 	deadline := t.Add(-db.ttl).Unix()
+	// the loop stops when all expired items removed
 	for db.items.evict(deadline, db.pool, db.lru) {
-		// the loop stops when all expired items removed
+		db.stats.ItemsEvicted++
 	}
 }
 
@@ -215,8 +244,10 @@ func (db *DB) init() error {
 		id := z.Member.(string)
 		unix := int64(z.Score)
 		if err := db.loadItem(id, unix); err != nil {
-			db.monitor.ApplyFailed(errors.Wrapf(err, "load failed for %s", id))
-			continue
+			db.logger.Println(errors.Wrapf(err, "load failed for %s", id))
+			db.stats.ItemsFailed++
+		} else {
+			db.stats.ItemsApplied++
 		}
 	}
 	return nil
@@ -233,7 +264,8 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 		if errors.Cause(err) != ErrVersionConflict {
 			return errors.Wrapf(err, "update failed for %s", buf.ID)
 		}
-		db.monitor.VersionConflictDetected(err)
+		db.logger.Println(err)
+		db.stats.VersionConfictDetected++
 		if err := db.loadItem(buf.ID, buf.Unix); err != nil {
 			return errors.Wrapf(err, "refresh failed for %s", buf.ID)
 		}

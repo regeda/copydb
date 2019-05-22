@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"errors"
 	"time"
 
 	"github.com/regeda/copydb"
@@ -12,86 +11,50 @@ func Serve(db *copydb.DB) {
 	go db.MustServe()
 
 	// wait until queries become acceptable
-	db.Queries() <- copydb.QueryAll(func(copydb.Item) {}, func(error) {})
+	db.QueriesIn() <- copydb.QueryAll(func(copydb.Item) {}, func(error) {})
 }
 
 // WaitForItem waits until an identifier will be found in the database.
 func WaitForItem(d time.Duration, db *copydb.DB, id string, unix int64, resolve ...copydb.QueryResolve) error {
-	doneCh := make(chan struct{})
-	defer close(doneCh)
+	deadline := time.Tick(d)
 
-	foundCh := make(chan struct{})
+	var found bool
 
-	go func() {
-		errCh := make(chan struct{})
-		for {
-			select {
-			case db.Queries() <- copydb.QueryByID(id, unix,
-				func(item copydb.Item) {
-					defer close(foundCh)
-					for _, r := range resolve {
-						r(item)
-					}
-				},
-				func(error) {
-					errCh <- struct{}{}
-				},
-			):
-			case <-doneCh:
-				return
-			}
-
-			select {
-			case <-errCh:
-			case <-doneCh:
-				return
-			}
+	for !found {
+		if err := db.Query(copydb.QueryByID(id, unix,
+			func(item copydb.Item) {
+				for _, r := range resolve {
+					r(item)
+				}
+				found = true
+			},
+			func(error) {
+			},
+		), deadline); err != nil {
+			return err
 		}
-	}()
-
-	select {
-	case <-foundCh:
-		return nil
-	case <-time.Tick(d):
-		return errors.New("timeout exceeded")
 	}
+
+	return nil
 }
 
 // WaitForError waits until an error will be returned.
 func WaitForError(d time.Duration, db *copydb.DB, id string, unix int64) error {
-	doneCh := make(chan struct{})
-	defer close(doneCh)
+	deadline := time.Tick(d)
 
-	errCh := make(chan error)
+	var err error
 
-	go func() {
-		resolveCh := make(chan struct{})
-		for {
-			select {
-			case db.Queries() <- copydb.QueryByID(id, unix,
-				func(copydb.Item) {
-					resolveCh <- struct{}{}
-				},
-				func(err error) {
-					errCh <- err
-				},
-			):
-			case <-doneCh:
-				return
-			}
-
-			select {
-			case <-resolveCh:
-			case <-doneCh:
-				return
-			}
+	for err == nil {
+		if qerr := db.Query(copydb.QueryByID(id, unix,
+			func(copydb.Item) {
+			},
+			func(e error) {
+				err = e
+			},
+		), deadline); qerr != nil {
+			return nil
 		}
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-time.Tick(d):
-		return nil
 	}
+
+	return err
 }

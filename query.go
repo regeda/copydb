@@ -49,3 +49,10 @@ func QueryPool(scan func(Pool)) Query {
 		scan(db.pool)
 	})
 }
+
+// QueryStats creates a query to scan db statistics.
+func QueryStats(scan func(Stats)) Query {
+	return queryFunc(func(db *DB) {
+		scan(db.stats)
+	})
+}
