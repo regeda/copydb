@@ -69,6 +69,8 @@ func main() {
 		log.Fatalf("failed to create a database: %v", err)
 	}
 
+	prometheus.MustRegister(newDBStatsCollector(db, log))
+
 	http.HandleFunc("/provider", observeHandler(providerHandler(db), providerHandlerDurationSummary))
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
@@ -125,4 +127,63 @@ func applyRequest(db *copydb.DB, in *providers.Request) error {
 		}
 	}
 	return stmt.Exec(db, in.Currtime)
+}
+
+type dbStatsCollector struct {
+	db     *copydb.DB
+	logger *log.Logger
+
+	itemsApplied            *prometheus.Desc
+	itemsFailed             *prometheus.Desc
+	itemsEvicted            *prometheus.Desc
+	versionConflictDetected *prometheus.Desc
+	dbScanned               *prometheus.Desc
+}
+
+func newDBStatsCollector(db *copydb.DB, logger *log.Logger) *dbStatsCollector {
+	return &dbStatsCollector{
+		db:     db,
+		logger: logger,
+		itemsApplied: prometheus.NewDesc(
+			"copydb_items_applied",
+			"count of applied items",
+			nil, nil),
+		itemsFailed: prometheus.NewDesc(
+			"copydb_items_failed",
+			"count of failed items",
+			nil, nil),
+		itemsEvicted: prometheus.NewDesc(
+			"copydb_items_evicted",
+			"count of evicted items",
+			nil, nil),
+		versionConflictDetected: prometheus.NewDesc(
+			"copydb_version_conflict_detected",
+			"count of version conflict detected",
+			nil, nil),
+		dbScanned: prometheus.NewDesc(
+			"copydb_db_scanned",
+			"count of db scanned",
+			nil, nil),
+	}
+}
+
+func (c *dbStatsCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.itemsApplied
+	ch <- c.itemsFailed
+	ch <- c.itemsEvicted
+	ch <- c.versionConflictDetected
+	ch <- c.dbScanned
+}
+
+func (c *dbStatsCollector) Collect(ch chan<- prometheus.Metric) {
+	err := c.db.Query(copydb.QueryStats(func(stats copydb.Stats) {
+		ch <- prometheus.MustNewConstMetric(c.itemsApplied, prometheus.GaugeValue, float64(stats.ItemsApplied))
+		ch <- prometheus.MustNewConstMetric(c.itemsFailed, prometheus.GaugeValue, float64(stats.ItemsFailed))
+		ch <- prometheus.MustNewConstMetric(c.itemsEvicted, prometheus.GaugeValue, float64(stats.ItemsEvicted))
+		ch <- prometheus.MustNewConstMetric(c.versionConflictDetected, prometheus.GaugeValue, float64(stats.VersionConfictDetected))
+		ch <- prometheus.MustNewConstMetric(c.dbScanned, prometheus.GaugeValue, float64(stats.DBScanned))
+	}), time.Tick(time.Second))
+	if err != nil {
+		c.logger.Printf("failed to query stats: %v", err)
+	}
 }
