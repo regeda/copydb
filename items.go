@@ -4,6 +4,7 @@ import (
 	"container/list"
 
 	"github.com/pkg/errors"
+	"github.com/regeda/copydb/internal/model"
 )
 
 type items map[string]*item
@@ -61,7 +62,7 @@ func (i *item) init(unix, version int64, data map[string]string) {
 	i.version = version
 }
 
-func (i *item) apply(u *Update) error {
+func (i *item) apply(u *model.Update) error {
 	if u.Version-i.version > 1 {
 		return errors.Wrapf(ErrVersionConflict, "update version (%d) is greater db version (%d) for %s", u.Version, i.version, u.ID)
 	}

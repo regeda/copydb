@@ -1,10 +1,14 @@
 package copydb
 
-import "time"
+import (
+	"time"
+
+	"github.com/regeda/copydb/internal/model"
+)
 
 // Statement wraps an update and execs it.
 type Statement struct {
-	upd *Update
+	upd *model.Update
 }
 
 // NewStatement creates a new statement update.
@@ -24,7 +28,7 @@ func (a *Statement) Set(name string, data []byte) {
 	if a.upd.Remove {
 		panic("set command conflicts with remove command")
 	}
-	a.upd.Set = append(a.upd.Set, Update_Field{Name: name, Data: data})
+	a.upd.Set = append(a.upd.Set, model.Update_Field{Name: name, Data: data})
 }
 
 // SetString updates a field within string.
@@ -37,7 +41,7 @@ func (a *Statement) Unset(name string) {
 	if a.upd.Remove {
 		panic("unset command conflicts with remove command")
 	}
-	a.upd.Unset = append(a.upd.Unset, Update_Field{Name: name})
+	a.upd.Unset = append(a.upd.Unset, model.Update_Field{Name: name})
 }
 
 // Exec runs a statement.

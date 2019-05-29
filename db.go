@@ -10,6 +10,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
+	"github.com/regeda/copydb/internal/model"
 )
 
 // DB implements all subscriptions and updates.
@@ -142,7 +143,7 @@ func (db *DB) Serve() error {
 		_ = pubsub.Close()
 	}()
 
-	var buf Update
+	var buf model.Update
 	ch := pubsub.Channel()
 
 	var evictChan <-chan time.Time
@@ -253,7 +254,7 @@ func (db *DB) init() error {
 	return nil
 }
 
-func (db *DB) apply(payload []byte, buf *Update) error {
+func (db *DB) apply(payload []byte, buf *model.Update) error {
 	if err := proto.Unmarshal(payload, buf); err != nil {
 		return errors.Wrap(err, "unmarshal failed")
 	}
@@ -274,7 +275,7 @@ func (db *DB) apply(payload []byte, buf *Update) error {
 	return nil
 }
 
-func (db *DB) replicate(u *Update) error {
+func (db *DB) replicate(u *model.Update) error {
 	itemKey := db.keys.item(u.ID)
 
 	var res *redis.Cmd
@@ -314,7 +315,7 @@ func (db *DB) processRemove(itemKey string) *redis.Cmd {
 	return removeItemScript.Run(db.r, []string{itemKey})
 }
 
-func (db *DB) processUpdate(itemKey string, u *Update) *redis.Cmd {
+func (db *DB) processUpdate(itemKey string, u *model.Update) *redis.Cmd {
 	params := []interface{}{
 		len(u.Set),
 		len(u.Unset),

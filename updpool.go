@@ -1,20 +1,24 @@
 package copydb
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/regeda/copydb/internal/model"
+)
 
 var updpool = sync.Pool{
 	New: func() interface{} {
-		return new(Update)
+		return new(model.Update)
 	},
 }
 
-func allocUpdate(id string) *Update {
-	u := updpool.Get().(*Update)
+func allocUpdate(id string) *model.Update {
+	u := updpool.Get().(*model.Update)
 	u.ID = id
 	return u
 }
 
-func freeUpdate(u *Update) {
+func freeUpdate(u *model.Update) {
 	u.Reset()
 	updpool.Put(u)
 }
