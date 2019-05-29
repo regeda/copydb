@@ -1,8 +1,8 @@
-package providers
+package drones
 
 import "time"
 
-// Request represents provider request update.
+// Request represents drone request update.
 type Request struct {
 	ID       string
 	Remove   bool

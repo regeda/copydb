@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -13,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/regeda/copydb"
-	"github.com/regeda/copydb/examples/providers"
+	"github.com/regeda/copydb/examples/drones"
 	"github.com/regeda/copydb/indexes/spatial"
 )
 
@@ -28,21 +29,27 @@ var defSummaryObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001
 const defMaxAge = time.Minute
 
 var (
-	providerHandlerDurationSummary = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name:       "provider_handler_duration",
+	droneHandlerDurationSummary = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name:       "drone_handler_duration",
+		Objectives: defSummaryObjectives,
+		MaxAge:     defMaxAge,
+	})
+
+	searchHandlerDurationSummary = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name:       "search_handler_duration",
 		Objectives: defSummaryObjectives,
 		MaxAge:     defMaxAge,
 	})
 )
 
 func init() {
-	prometheus.MustRegister(providerHandlerDurationSummary)
+	prometheus.MustRegister(droneHandlerDurationSummary, searchHandlerDurationSummary)
 }
 
 func main() {
 	flag.Parse()
 
-	log := log.New(os.Stdout, "providersdb: ", log.Lshortfile|log.LstdFlags)
+	log := log.New(os.Stdout, "dronesdb: ", log.Lshortfile|log.LstdFlags)
 
 	redis.SetLogger(log)
 
@@ -71,7 +78,8 @@ func main() {
 
 	prometheus.MustRegister(newDBStatsCollector(db, log))
 
-	http.HandleFunc("/provider", observeHandler(providerHandler(db), providerHandlerDurationSummary))
+	http.HandleFunc("/drone", observeHandler(droneHandler(db), droneHandlerDurationSummary))
+	http.HandleFunc("/search", observeHandler(searchHandler(db), searchHandlerDurationSummary))
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		log.Println("run http...")
@@ -95,9 +103,9 @@ func summaryObserve(s prometheus.Summary, now time.Time) {
 	s.Observe(time.Since(now).Seconds())
 }
 
-func providerHandler(db *copydb.DB) http.HandlerFunc {
+func droneHandler(db *copydb.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var in providers.Request
+		var in drones.Request
 		decoder := json.NewDecoder(r.Body)
 		defer func() {
 			_ = r.Body.Close()
@@ -114,7 +122,38 @@ func providerHandler(db *copydb.DB) http.HandlerFunc {
 	}
 }
 
-func applyRequest(db *copydb.DB, in *providers.Request) error {
+func searchHandler(db *copydb.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req spatial.SearchRequest
+
+		// read HTTP query
+		query := r.URL.Query()
+		_, err := fmt.Sscanf(query.Get("coord"), "%f,%f", &req.Lon, &req.Lat)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("coord parameter is wrong: %v", err), http.StatusBadRequest)
+			return
+		}
+		_, _ = fmt.Sscan(query.Get("radius"), &req.Radius)
+		_, _ = fmt.Sscan(query.Get("limit"), &req.Limit)
+
+		// run CopyDB query
+		err = db.Query(copydb.QueryPool(spatial.Search(
+			req,
+			func(item copydb.Item) {
+				it := item.(copydb.SimpleItem)
+				_, _ = fmt.Fprintf(w, "%s - %s\n", it["$id"], it["geom"])
+			},
+			func(err error) {
+			},
+		)), time.Tick(time.Second))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to query db: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func applyRequest(db *copydb.DB, in *drones.Request) error {
 	stmt := copydb.NewStatement(in.ID)
 	if in.Remove {
 		stmt.Remove()

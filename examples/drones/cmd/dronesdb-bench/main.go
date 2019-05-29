@@ -12,21 +12,21 @@ import (
 
 	"github.com/google/uuid"
 	geojson "github.com/paulmach/go.geojson"
-	"github.com/regeda/copydb/examples/providers"
+	"github.com/regeda/copydb/examples/drones"
 )
 
 var (
-	providersCount = flag.Int("n", 1000, "providers count")
-	updateSleep    = flag.Duration("sleep", time.Millisecond, "time to sleep between update")
-	providerURL    = flag.String("provider-host", "http://localhost:8080/provider", "provider http host")
+	dronesCount = flag.Int("n", 1000, "drones count")
+	updateSleep = flag.Duration("sleep", time.Millisecond, "time to sleep between update")
+	droneURL    = flag.String("drone-host", "http://localhost:8080/drone", "drone http host")
 )
 
 func main() {
 	flag.Parse()
 
-	for req := range requestsGenerator(*providersCount, *updateSleep) {
+	for req := range requestsGenerator(*dronesCount, *updateSleep) {
 		data, _ := json.Marshal(req)
-		resp, err := http.Post(*providerURL, "application/json", bytes.NewReader(data))
+		resp, err := http.Post(*droneURL, "application/json", bytes.NewReader(data))
 		if err != nil {
 			log.Printf("request failed: %v", err)
 			continue
@@ -51,9 +51,9 @@ func printResponse(resp *http.Response) error {
 	return nil
 }
 
-type requestUpdater func(*providers.Request)
+type requestUpdater func(*drones.Request)
 
-func requestsGenerator(n int, sleep time.Duration) <-chan *providers.Request {
+func requestsGenerator(n int, sleep time.Duration) <-chan *drones.Request {
 	ids := make([]string, n)
 	for i := 0; i < n; i++ {
 		ids[i] = uuid.New().String()
@@ -62,10 +62,10 @@ func requestsGenerator(n int, sleep time.Duration) <-chan *providers.Request {
 		coordRandomizer(-73, 40), // New York
 		statusRandomizer("x", "y", "z"),
 	}
-	outCh := make(chan *providers.Request, n)
+	outCh := make(chan *drones.Request, n)
 	go func() {
 		for {
-			req := providers.Request{
+			req := drones.Request{
 				ID:       ids[rand.Intn(n)],
 				Currtime: time.Now(),
 				Set:      make(map[string][]byte),
@@ -85,7 +85,7 @@ func coordRandomizer(x, y float64) requestUpdater {
 	geom := geojson.Geometry{
 		Type: geojson.GeometryPoint,
 	}
-	return func(r *providers.Request) {
+	return func(r *drones.Request) {
 		geom.Point = []float64{x + rand.Float64(), y + rand.Float64()}
 
 		r.Set["geom"], _ = geom.MarshalJSON()
@@ -97,7 +97,7 @@ func statusRandomizer(statuses ...string) requestUpdater {
 	for i, s := range statuses {
 		data[i] = []byte(s)
 	}
-	return func(r *providers.Request) {
+	return func(r *drones.Request) {
 		i := rand.Intn(len(data))
 		r.Set["status"] = data[i]
 	}

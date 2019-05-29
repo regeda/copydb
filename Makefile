@@ -6,8 +6,8 @@ clean:
 	rm -rf bin
 
 build:
-	GOGC=off go build -o bin/providersdb examples/providers/cmd/providersdb/main.go
-	GOGC=off go build -o bin/providersdb-gun examples/providers/cmd/providersdb-gun/main.go
+	GOGC=off go build -o bin/dronesdb examples/drones/cmd/dronesdb/main.go
+	GOGC=off go build -o bin/dronesdb-bench examples/drones/cmd/dronesdb-bench/main.go
 
 generate:
 	go generate
