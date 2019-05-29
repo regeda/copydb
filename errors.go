@@ -7,4 +7,5 @@ var (
 	ErrVersionNotFound = errors.New("version not found")
 	ErrItemNotFound    = errors.New("item not found")
 	ErrTimeoutExceeded = errors.New("timeout exceeded")
+	ErrZeroVersion     = errors.New("zero version")
 )

@@ -290,7 +290,7 @@ func (db *DB) replicate(u *Update) error {
 	}
 
 	if version == 0 {
-		return nil
+		return ErrZeroVersion
 	}
 
 	u.Version = version
