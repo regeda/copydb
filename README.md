@@ -5,9 +5,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/regeda/copydb)](https://goreportcard.com/report/github.com/regeda/copydb)
 [![GoDoc](https://godoc.org/github.com/regeda/copydb?status.svg)](https://godoc.org/github.com/regeda/copydb)
 
-CopyDB is **in-memory** database replicated through Redis pub/sub approach. All writes are synced with Redis and then replicated to all CopyDB instances.
+CopyDB is **in-memory** database works over Redis pub/sub approach. All writes are synced with Redis and then replicated across all CopyDB instances.
 CopyDB is an **embedded** database and it gives you a freedom to organize any cache patterns inside your application.
-CopyDB is the best choice for data that updates frequent to provide **eventual consistency**.
+CopyDB provides **eventual consistency** for data that updates frequently.
 
 ## How it works
 
@@ -45,3 +45,7 @@ type Stats struct {
 	DBScanned              int
 }
 ```
+
+## Example
+
+Please, checkout an example provided with the repository to figure out how to run your first application based on CopyDB.
