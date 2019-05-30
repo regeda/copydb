@@ -11,7 +11,7 @@ CopyDB provides **eventual consistency** for data that updates frequently.
 
 ## How it works
 
-CopyDB loads all available items in memory from Redis after start. Then the database subscribes on items updates.
+CopyDB downloads all available items in memory from Redis after start. Then the database subscribes on items updates.
 
 > Each item contains a version to guarantee a consistent update on a particular instance.
 > An item will be reloaded from Redis if a new version is not greater than existed by 1.

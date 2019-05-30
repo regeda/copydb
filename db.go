@@ -354,7 +354,7 @@ func (db *DB) loadItem(id string, unix int64) error {
 	}
 	delete(data, keyVer) // version field is treated separately
 
-	db.items.item(id, db.pool, db.lru).init(unix, ver, data)
+	db.items.item(id, db.pool, db.lru).init(id, unix, ver, data)
 
 	return nil
 }

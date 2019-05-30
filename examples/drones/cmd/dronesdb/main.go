@@ -21,6 +21,7 @@ import (
 var (
 	redisHost  = flag.String("redis-host", "127.0.0.1:6379", "redis host")
 	dbCapacity = flag.Int("cap", 2000, "database capacity")
+	dbTTL      = flag.Duration("ttl", 5*time.Minute, "item TTL")
 	listenHost = flag.String("listen-host", ":8080", "listen host for incoming events")
 )
 
@@ -67,6 +68,7 @@ func main() {
 
 	db, err := copydb.New(cluster,
 		copydb.WithCapacity(*dbCapacity),
+		copydb.WithTTL(*dbTTL),
 		copydb.WithLogger(log),
 		copydb.WithPool(spatial.NewIndex(13, func() copydb.Item {
 			return make(copydb.SimpleItem)

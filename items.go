@@ -24,7 +24,6 @@ func (ii items) item(id string, pool Pool, lru *list.List) *item {
 	} else {
 		lru.MoveToBack(i.elem)
 	}
-	i.Set(keyID, []byte(id))
 	return i
 }
 
@@ -53,11 +52,12 @@ type item struct {
 	version int64
 }
 
-func (i *item) init(unix, version int64, data map[string]string) {
+func (i *item) init(id string, unix, version int64, data map[string]string) {
 	i.Remove()
 	for k, v := range data {
 		i.Set(k, []byte(v))
 	}
+	i.Set(keyID, []byte(id))
 	i.unix = unix
 	i.version = version
 }
@@ -75,6 +75,7 @@ func (i *item) apply(u *model.Update) error {
 		for _, f := range u.Unset {
 			i.Unset(f.Name)
 		}
+		i.Set(keyID, []byte(u.ID))
 	}
 	i.unix = u.Unix
 	i.version = u.Version
