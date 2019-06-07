@@ -15,7 +15,8 @@ import (
 
 // DB implements all subscriptions and updates.
 type DB struct {
-	r Redis
+	r          Redis
+	pubsubOpts PubSubOpts
 
 	items
 	keys
@@ -92,6 +93,19 @@ func WithLogger(logger *log.Logger) DBOpt {
 	}
 }
 
+// PubSubOpts contains parameters for pubcub configuration.
+type PubSubOpts struct {
+	ReceiveTimeout time.Duration
+	ChannelSize    int
+}
+
+// WithPubSubOpts configures pubsub.
+func WithPubSubOpts(opts PubSubOpts) DBOpt {
+	return func(db *DB) {
+		db.pubsubOpts = opts
+	}
+}
+
 // New creates a new DB.
 func New(r Redis, opts ...DBOpt) (*DB, error) {
 	if err := setupScripts(r); err != nil {
@@ -136,7 +150,7 @@ func MustNew(r Redis, opts ...DBOpt) *DB {
 // Serve subscribes to the channel updates.
 func (db *DB) Serve() error {
 	pubsub := db.r.Subscribe(db.keys.channel)
-	if _, err := pubsub.Receive(); err != nil {
+	if _, err := pubsub.ReceiveTimeout(db.pubsubOpts.ReceiveTimeout); err != nil {
 		return errors.Wrap(err, "subscribe failed")
 	}
 	defer func() {
@@ -144,7 +158,7 @@ func (db *DB) Serve() error {
 	}()
 
 	var buf model.Update
-	ch := pubsub.Channel()
+	ch := pubsub.ChannelSize(db.pubsubOpts.ChannelSize)
 
 	var evictChan <-chan time.Time
 	if db.ttl > 0 {

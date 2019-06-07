@@ -29,22 +29,14 @@ var defSummaryObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001
 
 const defMaxAge = time.Minute
 
-var (
-	droneHandlerDurationSummary = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name:       "drone_handler_duration",
-		Objectives: defSummaryObjectives,
-		MaxAge:     defMaxAge,
-	})
-
-	searchHandlerDurationSummary = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name:       "search_handler_duration",
-		Objectives: defSummaryObjectives,
-		MaxAge:     defMaxAge,
-	})
-)
+var handlerDurationSummary = prometheus.NewSummaryVec(prometheus.SummaryOpts{
+	Name:       "handler_duration",
+	Objectives: defSummaryObjectives,
+	MaxAge:     defMaxAge,
+}, []string{"handler"})
 
 func init() {
-	prometheus.MustRegister(droneHandlerDurationSummary, searchHandlerDurationSummary)
+	prometheus.MustRegister(handlerDurationSummary)
 }
 
 func main() {
@@ -80,8 +72,8 @@ func main() {
 
 	prometheus.MustRegister(newDBStatsCollector(db, log))
 
-	http.HandleFunc("/drone", observeHandler(droneHandler(db), droneHandlerDurationSummary))
-	http.HandleFunc("/search", observeHandler(searchHandler(db), searchHandlerDurationSummary))
+	http.HandleFunc("/drone", observeHandler(droneHandler(db), handlerDurationSummary.WithLabelValues("drone")))
+	http.HandleFunc("/search", observeHandler(searchHandler(db), handlerDurationSummary.WithLabelValues("search")))
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		log.Println("run http...")
@@ -94,14 +86,14 @@ func main() {
 	log.Fatal(db.Serve())
 }
 
-func observeHandler(h http.Handler, s prometheus.Summary) http.HandlerFunc {
+func observeHandler(h http.Handler, s prometheus.Observer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer summaryObserve(s, time.Now())
 		h.ServeHTTP(w, r)
 	}
 }
 
-func summaryObserve(s prometheus.Summary, now time.Time) {
+func summaryObserve(s prometheus.Observer, now time.Time) {
 	s.Observe(time.Since(now).Seconds())
 }
 
