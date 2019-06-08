@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"time"
 
 	"github.com/regeda/copydb"
@@ -16,12 +17,13 @@ func Serve(db *copydb.DB) {
 
 // WaitForItem waits until an identifier will be found in the database.
 func WaitForItem(d time.Duration, db *copydb.DB, id string, unix int64, resolve ...copydb.QueryResolve) error {
-	deadline := time.Tick(d)
+	ctx, cancel := context.WithTimeout(context.TODO(), d)
+	defer cancel()
 
 	var found bool
 
 	for !found {
-		if err := db.Query(copydb.QueryByID(id, unix,
+		if err := db.Query(ctx, copydb.QueryByID(id, unix,
 			func(item copydb.Item) {
 				for _, r := range resolve {
 					r(item)
@@ -30,7 +32,7 @@ func WaitForItem(d time.Duration, db *copydb.DB, id string, unix int64, resolve 
 			},
 			func(error) {
 			},
-		), deadline); err != nil {
+		)); err != nil {
 			return err
 		}
 	}
@@ -40,18 +42,19 @@ func WaitForItem(d time.Duration, db *copydb.DB, id string, unix int64, resolve 
 
 // WaitForError waits until an error will be returned.
 func WaitForError(d time.Duration, db *copydb.DB, id string, unix int64) error {
-	deadline := time.Tick(d)
+	ctx, cancel := context.WithTimeout(context.TODO(), d)
+	defer cancel()
 
 	var err error
 
 	for err == nil {
-		if qerr := db.Query(copydb.QueryByID(id, unix,
+		if qerr := db.Query(ctx, copydb.QueryByID(id, unix,
 			func(copydb.Item) {
 			},
 			func(e error) {
 				err = e
 			},
-		), deadline); qerr != nil {
+		)); qerr != nil {
 			return nil
 		}
 	}

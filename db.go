@@ -2,6 +2,7 @@ package copydb
 
 import (
 	"container/list"
+	"context"
 	"log"
 	"os"
 	"strconv"
@@ -15,7 +16,8 @@ import (
 
 // DB implements all subscriptions and updates.
 type DB struct {
-	r          Redis
+	r Redis
+
 	pubsubOpts PubSubOpts
 
 	items
@@ -23,6 +25,7 @@ type DB struct {
 
 	pool Pool
 
+	replica chan model.Item
 	queries chan Query
 
 	ttl time.Duration
@@ -62,6 +65,8 @@ func WithChannelKey(s string) DBOpt {
 func WithCapacity(c int) DBOpt {
 	return func(db *DB) {
 		db.items = make(items, c)
+		// @NOTE: maybe configure replica capacity of the channel separately
+		db.replica = make(chan model.Item, c)
 	}
 }
 
@@ -121,6 +126,7 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 				return make(SimpleItem)
 			},
 		},
+		replica: make(chan model.Item),
 		queries: make(chan Query),
 		lru:     list.New(),
 		stopCh:  make(chan struct{}),
@@ -134,6 +140,9 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 	if err := db.init(); err != nil {
 		return nil, errors.Wrap(err, "init failed")
 	}
+
+	// @NOTE: make configurable
+	go db.replicator(time.Second)
 
 	return &db, nil
 }
@@ -157,7 +166,6 @@ func (db *DB) Serve() error {
 		_ = pubsub.Close()
 	}()
 
-	var buf model.Update
 	ch := pubsub.ChannelSize(db.pubsubOpts.ChannelSize)
 
 	var evictChan <-chan time.Time
@@ -168,14 +176,22 @@ func (db *DB) Serve() error {
 		evictChan = ticker.C
 	}
 
+	var update model.Update
+
 	for {
 		select {
 		case msg := <-ch:
-			if err := db.apply([]byte(msg.Payload), &buf); err != nil {
-				db.logger.Println(err)
-				db.stats.ItemsFailed++
-			} else {
-				db.stats.ItemsApplied++
+			if err := proto.Unmarshal([]byte(msg.Payload), &update); err != nil {
+				db.logger.Printf("unmarshal failed: %v", err)
+				continue
+			}
+			for _, item := range update.Items {
+				if err := db.apply(item); err != nil {
+					db.logger.Println(err)
+					db.stats.ItemsFailed++
+				} else {
+					db.stats.ItemsApplied++
+				}
 			}
 		case query := <-db.queries:
 			query.scan(db)
@@ -183,9 +199,56 @@ func (db *DB) Serve() error {
 		case now := <-evictChan:
 			db.evictExpired(now)
 		case <-db.stopCh:
+			// @NOTE: drain replica channel
 			return nil
 		}
 	}
+}
+
+func (db *DB) replicator(interval time.Duration) {
+	var update model.Update
+
+	ticker := time.NewTicker(interval)
+
+	for {
+		select {
+		case item := <-db.replica:
+			update.Items = append(update.Items, item)
+		case <-ticker.C:
+			if len(update.Items) == 0 {
+				// nothing to update
+				continue
+			}
+			if err := db.replicate(&update); err != nil {
+				db.logger.Printf("replication failed: %v", err)
+			} else {
+				db.stats.ItemsReplicated += len(update.Items)
+				update.Items = update.Items[:0]
+			}
+		}
+	}
+}
+
+func (db *DB) replicate(update *model.Update) error {
+	data, err := proto.Marshal(update)
+	if err != nil {
+		return errors.Wrap(err, "marshal failed")
+	}
+
+	// @NOTE; make memory pool for "zz"
+	zz := make([]redis.Z, len(update.Items))
+	for i, item := range update.Items {
+		zz[i] = redis.Z{
+			Score:  float64(item.Unix),
+			Member: item.ID,
+		}
+	}
+
+	pipe := db.r.Pipeline()
+	pipe.ZAdd(db.keys.list, zz...)
+	pipe.Publish(db.keys.channel, data)
+	_, err = pipe.Exec()
+	return errors.Wrap(err, "pipeline failed")
 }
 
 // MustServe starts the database. It panics if serve failed.
@@ -196,24 +259,24 @@ func (db *DB) MustServe() {
 }
 
 // Stop terminates serve.
-func (db *DB) Stop(wait time.Duration) error {
+func (db *DB) Stop(ctx context.Context) error {
 	select {
 	case db.stopCh <- struct{}{}:
-	case <-time.Tick(wait):
-		return ErrTimeoutExceeded
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	return nil
 }
 
 // MustStop terminates serve. It panics if stopping failed.
-func (db *DB) MustStop(wait time.Duration) {
-	if err := db.Stop(wait); err != nil {
+func (db *DB) MustStop(ctx context.Context) {
+	if err := db.Stop(ctx); err != nil {
 		panic(err.Error())
 	}
 }
 
 // Query runs a query and waits for scan completion.
-func (db *DB) Query(q Query, deadline <-chan time.Time) error {
+func (db *DB) Query(ctx context.Context, q Query) error {
 	done := make(chan struct{})
 
 	select {
@@ -221,14 +284,14 @@ func (db *DB) Query(q Query, deadline <-chan time.Time) error {
 		defer close(done)
 		q.scan(db)
 	}):
-	case <-deadline:
-		return ErrTimeoutExceeded
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	select {
 	case <-done:
-	case <-deadline:
-		return ErrTimeoutExceeded
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	return nil
 }
@@ -268,35 +331,31 @@ func (db *DB) init() error {
 	return nil
 }
 
-func (db *DB) apply(payload []byte, buf *model.Update) error {
-	if err := proto.Unmarshal(payload, buf); err != nil {
-		return errors.Wrap(err, "unmarshal failed")
+func (db *DB) apply(it model.Item) error {
+	item := db.items.item(it.ID, db.pool, db.lru)
+
+	err := item.apply(it)
+	if err == nil {
+		return nil
+	}
+	if errors.Cause(err) != ErrVersionConflict {
+		return errors.Wrapf(err, "update failed for %s", it.ID)
 	}
 
-	item := db.items.item(buf.ID, db.pool, db.lru)
+	db.logger.Println(err)
+	db.stats.VersionConfictDetected++
 
-	if err := item.apply(buf); err != nil {
-		if errors.Cause(err) != ErrVersionConflict {
-			return errors.Wrapf(err, "update failed for %s", buf.ID)
-		}
-		db.logger.Println(err)
-		db.stats.VersionConfictDetected++
-		if err := db.loadItem(buf.ID, buf.Unix); err != nil {
-			return errors.Wrapf(err, "refresh failed for %s", buf.ID)
-		}
-	}
-
-	return nil
+	return errors.Wrapf(db.loadItem(it.ID, it.Unix), "refresh failed for %s", it.ID)
 }
 
-func (db *DB) replicate(u *model.Update) error {
-	itemKey := db.keys.item(u.ID)
+func (db *DB) exec(ctx context.Context, item model.Item) error {
+	itemKey := db.keys.item(item.ID)
 
 	var res *redis.Cmd
-	if u.Remove {
+	if item.Remove {
 		res = db.processRemove(itemKey)
 	} else {
-		res = db.processUpdate(itemKey, u)
+		res = db.processUpdate(itemKey, item)
 	}
 
 	version, err := res.Int64()
@@ -308,36 +367,31 @@ func (db *DB) replicate(u *model.Update) error {
 		return ErrZeroVersion
 	}
 
-	u.Version = version
+	item.Version = version
 
-	data, err := proto.Marshal(u)
-	if err != nil {
-		return errors.Wrap(err, "marshal failed")
+	select {
+	case db.replica <- item:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
-	pipe := db.r.Pipeline()
-	pipe.ZAdd(db.keys.list, redis.Z{
-		Score:  float64(u.Unix),
-		Member: u.ID,
-	})
-	pipe.Publish(db.keys.channel, data)
-	_, err = pipe.Exec()
-	return errors.Wrap(err, "pipeline failed")
+	return nil
 }
 
 func (db *DB) processRemove(itemKey string) *redis.Cmd {
 	return removeItemScript.Run(db.r, []string{itemKey})
 }
 
-func (db *DB) processUpdate(itemKey string, u *model.Update) *redis.Cmd {
+func (db *DB) processUpdate(itemKey string, item model.Item) *redis.Cmd {
+	// @NOTE: make memory pool for "params"
 	params := []interface{}{
-		len(u.Set),
-		len(u.Unset),
+		len(item.Set),
+		len(item.Unset),
 	}
-	for _, f := range u.Set {
+	for _, f := range item.Set {
 		params = append(params, f.Name, f.Data)
 	}
-	for _, f := range u.Unset {
+	for _, f := range item.Unset {
 		params = append(params, f.Name)
 	}
 

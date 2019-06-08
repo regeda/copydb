@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -38,6 +39,8 @@ var handlerDurationSummary = prometheus.NewSummaryVec(prometheus.SummaryOpts{
 func init() {
 	prometheus.MustRegister(handlerDurationSummary)
 }
+
+var dronesCtx = context.Background()
 
 func main() {
 	flag.Parse()
@@ -109,7 +112,10 @@ func droneHandler(db *copydb.DB) http.HandlerFunc {
 			return
 		}
 
-		if err := applyRequest(db, &in); err != nil {
+		ctx, cancel := context.WithTimeout(dronesCtx, time.Second)
+		defer cancel()
+
+		if err := applyRequest(ctx, db, &in); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -130,8 +136,11 @@ func searchHandler(db *copydb.DB) http.HandlerFunc {
 		_, _ = fmt.Sscan(query.Get("radius"), &req.Radius)
 		_, _ = fmt.Sscan(query.Get("limit"), &req.Limit)
 
+		ctx, cancel := context.WithTimeout(dronesCtx, time.Second)
+		defer cancel()
+
 		// run CopyDB query
-		err = db.Query(copydb.QueryPool(spatial.Search(
+		err = db.Query(ctx, copydb.QueryPool(spatial.Search(
 			req,
 			func(item copydb.Item) {
 				it := item.(copydb.SimpleItem)
@@ -139,7 +148,7 @@ func searchHandler(db *copydb.DB) http.HandlerFunc {
 			},
 			func(err error) {
 			},
-		)), time.Tick(time.Second))
+		)))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to query db: %v", err), http.StatusInternalServerError)
 			return
@@ -147,7 +156,7 @@ func searchHandler(db *copydb.DB) http.HandlerFunc {
 	}
 }
 
-func applyRequest(db *copydb.DB, in *drones.Request) error {
+func applyRequest(ctx context.Context, db *copydb.DB, in *drones.Request) error {
 	stmt := copydb.NewStatement(in.ID)
 	if in.Remove {
 		stmt.Remove()
@@ -159,7 +168,7 @@ func applyRequest(db *copydb.DB, in *drones.Request) error {
 			stmt.Unset(name)
 		}
 	}
-	return stmt.Exec(db, in.Currtime)
+	return stmt.Exec(ctx, db, in.Currtime)
 }
 
 type dbStatsCollector struct {
@@ -169,6 +178,7 @@ type dbStatsCollector struct {
 	itemsApplied            *prometheus.Desc
 	itemsFailed             *prometheus.Desc
 	itemsEvicted            *prometheus.Desc
+	itemsReplicated         *prometheus.Desc
 	versionConflictDetected *prometheus.Desc
 	dbScanned               *prometheus.Desc
 }
@@ -189,6 +199,10 @@ func newDBStatsCollector(db *copydb.DB, logger *log.Logger) *dbStatsCollector {
 			"copydb_items_evicted",
 			"count of evicted items",
 			nil, nil),
+		itemsReplicated: prometheus.NewDesc(
+			"copydb_items_replicated",
+			"count of replicated items",
+			nil, nil),
 		versionConflictDetected: prometheus.NewDesc(
 			"copydb_version_conflict_detected",
 			"count of version conflict detected",
@@ -204,18 +218,23 @@ func (c *dbStatsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.itemsApplied
 	ch <- c.itemsFailed
 	ch <- c.itemsEvicted
+	ch <- c.itemsReplicated
 	ch <- c.versionConflictDetected
 	ch <- c.dbScanned
 }
 
 func (c *dbStatsCollector) Collect(ch chan<- prometheus.Metric) {
-	err := c.db.Query(copydb.QueryStats(func(stats copydb.Stats) {
+	ctx, cancel := context.WithTimeout(dronesCtx, time.Second)
+	defer cancel()
+
+	err := c.db.Query(ctx, copydb.QueryStats(func(stats copydb.Stats) {
 		ch <- prometheus.MustNewConstMetric(c.itemsApplied, prometheus.GaugeValue, float64(stats.ItemsApplied))
 		ch <- prometheus.MustNewConstMetric(c.itemsFailed, prometheus.GaugeValue, float64(stats.ItemsFailed))
 		ch <- prometheus.MustNewConstMetric(c.itemsEvicted, prometheus.GaugeValue, float64(stats.ItemsEvicted))
+		ch <- prometheus.MustNewConstMetric(c.itemsReplicated, prometheus.GaugeValue, float64(stats.ItemsReplicated))
 		ch <- prometheus.MustNewConstMetric(c.versionConflictDetected, prometheus.GaugeValue, float64(stats.VersionConfictDetected))
 		ch <- prometheus.MustNewConstMetric(c.dbScanned, prometheus.GaugeValue, float64(stats.DBScanned))
-	}), time.Tick(time.Second))
+	}))
 	if err != nil {
 		c.logger.Printf("failed to query stats: %v", err)
 	}

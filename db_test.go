@@ -1,6 +1,7 @@
 package copydb_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,12 +13,19 @@ import (
 
 const waitDuration = 5 * time.Second
 
+func stopDB(db *copydb.DB, t time.Duration) {
+	ctx, cancel := context.WithTimeout(context.TODO(), t)
+	defer cancel()
+
+	db.MustStop(ctx)
+}
+
 func TestDB_Replicate(t *testing.T) {
 	t.Run("set", func(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
-		defer db.MustStop(waitDuration)
+		defer stopDB(db, waitDuration)
 
 		testutil.Serve(db)
 
@@ -26,7 +34,7 @@ func TestDB_Replicate(t *testing.T) {
 		stmt := copydb.NewStatement("xxx")
 		stmt.SetString("foo", "bar")
 		stmt.SetString("baz", "quux")
-		require.NoError(t, stmt.Exec(db, ts))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts))
 
 		err := testutil.WaitForItem(waitDuration, db, "xxx", ts.Unix(), func(item copydb.Item) {
 			i := item.(copydb.SimpleItem)
@@ -42,7 +50,7 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
-		defer db.MustStop(waitDuration)
+		defer stopDB(db, waitDuration)
 
 		testutil.Serve(db)
 
@@ -51,7 +59,7 @@ func TestDB_Replicate(t *testing.T) {
 		stmt := copydb.NewStatement("yyy")
 		stmt.SetString("foo", "bar")
 		stmt.SetString("baz", "quux")
-		require.NoError(t, stmt.Exec(db, ts))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts))
 
 		err := testutil.WaitForItem(waitDuration, db, "yyy", ts.Unix())
 		require.NoError(t, err)
@@ -60,7 +68,7 @@ func TestDB_Replicate(t *testing.T) {
 
 		stmt = copydb.NewStatement("yyy")
 		stmt.Unset("foo")
-		require.NoError(t, stmt.Exec(db, ts))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts))
 
 		err = testutil.WaitForItem(waitDuration, db, "yyy", ts.Unix(), func(item copydb.Item) {
 			i := item.(copydb.SimpleItem)
@@ -77,7 +85,7 @@ func TestDB_Replicate(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis)
-		defer db.MustStop(waitDuration)
+		defer stopDB(db, waitDuration)
 
 		testutil.Serve(db)
 
@@ -86,7 +94,7 @@ func TestDB_Replicate(t *testing.T) {
 		stmt := copydb.NewStatement("zzz")
 		stmt.SetString("foo", "bar")
 		stmt.SetString("baz", "quux")
-		require.NoError(t, stmt.Exec(db, ts))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts))
 
 		err := testutil.WaitForItem(waitDuration, db, "zzz", ts.Unix())
 		require.NoError(t, err)
@@ -95,7 +103,7 @@ func TestDB_Replicate(t *testing.T) {
 
 		stmt = copydb.NewStatement("zzz")
 		stmt.Remove()
-		require.NoError(t, stmt.Exec(db, ts))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts))
 
 		err = testutil.WaitForItem(waitDuration, db, "zzz", ts.Unix(), func(item copydb.Item) {
 			i := item.(copydb.SimpleItem)
@@ -114,7 +122,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer db.MustStop(waitDuration)
+		defer stopDB(db, waitDuration)
 
 		testutil.Serve(db)
 
@@ -122,13 +130,13 @@ func TestDB_EvictExpired(t *testing.T) {
 
 		stmt := copydb.NewStatement("xxx")
 		stmt.SetString("foo", "bar")
-		require.NoError(t, stmt.Exec(db, ts1))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts1))
 
 		ts2 := ts1.Add(ttl * 2)
 
 		stmt = copydb.NewStatement("yyy")
 		stmt.SetString("baz", "quux")
-		require.NoError(t, stmt.Exec(db, ts2))
+		require.NoError(t, stmt.Exec(context.TODO(), db, ts2))
 
 		require.NoError(t,
 			testutil.WaitForItem(ttl, db, "xxx", ts1.Unix()),
@@ -150,7 +158,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
 		db1 := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer db1.MustStop(waitDuration)
+		defer stopDB(db1, waitDuration)
 
 		testutil.Serve(db1)
 
@@ -158,13 +166,13 @@ func TestDB_EvictExpired(t *testing.T) {
 
 		stmt := copydb.NewStatement("xxx")
 		stmt.SetString("foo", "bar")
-		require.NoError(t, stmt.Exec(db1, ts1))
+		require.NoError(t, stmt.Exec(context.TODO(), db1, ts1))
 
 		ts2 := ts1.Add(ttl * 2)
 
 		stmt = copydb.NewStatement("yyy")
 		stmt.SetString("baz", "quux")
-		require.NoError(t, stmt.Exec(db1, ts2))
+		require.NoError(t, stmt.Exec(context.TODO(), db1, ts2))
 
 		require.NoError(t,
 			testutil.WaitForItem(ttl, db1, "xxx", ts1.Unix()),
@@ -176,7 +184,7 @@ func TestDB_EvictExpired(t *testing.T) {
 		time.Sleep(ttl + time.Second)
 
 		db2 := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer db2.MustStop(waitDuration)
+		defer stopDB(db2, waitDuration)
 
 		testutil.Serve(db2)
 
@@ -195,12 +203,12 @@ func TestDB_ResolveVersionConflict(t *testing.T) {
 	redis := testutil.NewRedis(t)
 
 	db1 := copydb.MustNew(redis)
-	defer db1.MustStop(waitDuration)
+	defer stopDB(db1, waitDuration)
 
 	testutil.Serve(db1)
 
 	db2 := copydb.MustNew(redis)
-	defer db2.MustStop(waitDuration)
+	defer stopDB(db2, waitDuration)
 
 	testutil.Serve(db2)
 
@@ -208,7 +216,7 @@ func TestDB_ResolveVersionConflict(t *testing.T) {
 
 	stmt1 := copydb.NewStatement("xxx")
 	stmt1.SetString("foo", "bar")
-	require.NoError(t, stmt1.Exec(db1, ts1))
+	require.NoError(t, stmt1.Exec(context.TODO(), db1, ts1))
 
 	require.NoError(t,
 		testutil.WaitForItem(waitDuration, db1, "xxx", ts1.Unix()),
@@ -218,13 +226,16 @@ func TestDB_ResolveVersionConflict(t *testing.T) {
 		testutil.WaitForItem(waitDuration, db2, "xxx", ts1.Unix()),
 	)
 
-	require.NoError(t, db2.Stop(waitDuration))
+	stopCtx, cancel := context.WithTimeout(context.TODO(), waitDuration)
+	defer cancel()
+
+	require.NoError(t, db2.Stop(stopCtx))
 
 	ts2 := ts1.Add(time.Second)
 
 	stmt2 := copydb.NewStatement("xxx")
 	stmt2.SetString("baz", "quux")
-	require.NoError(t, stmt2.Exec(db1, ts2))
+	require.NoError(t, stmt2.Exec(context.TODO(), db1, ts2))
 
 	require.NoError(t,
 		testutil.WaitForItem(waitDuration, db1, "xxx", ts2.Unix()),
@@ -241,7 +252,7 @@ func TestDB_ResolveVersionConflict(t *testing.T) {
 
 	stmt3 := copydb.NewStatement("xxx")
 	stmt3.Unset("foo")
-	require.NoError(t, stmt3.Exec(db1, ts3))
+	require.NoError(t, stmt3.Exec(context.TODO(), db1, ts3))
 
 	require.NoError(t,
 		testutil.WaitForItem(waitDuration, db1, "xxx", ts3.Unix()),

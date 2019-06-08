@@ -62,22 +62,22 @@ func (i *item) init(id string, unix, version int64, data map[string]string) {
 	i.version = version
 }
 
-func (i *item) apply(u *model.Update) error {
-	if u.Version-i.version > 1 {
-		return errors.Wrapf(ErrVersionConflict, "update version (%d) is greater db version (%d) for %s", u.Version, i.version, u.ID)
+func (i *item) apply(it model.Item) error {
+	if it.Version-i.version > 1 {
+		return errors.Wrapf(ErrVersionConflict, "update.%d, db.%d (%s)", it.Version, i.version, it.ID)
 	}
-	if u.Remove {
+	if it.Remove {
 		i.Remove()
 	} else {
-		for _, f := range u.Set {
+		for _, f := range it.Set {
 			i.Set(f.Name, f.Data)
 		}
-		for _, f := range u.Unset {
+		for _, f := range it.Unset {
 			i.Unset(f.Name)
 		}
-		i.Set(keyID, []byte(u.ID))
+		i.Set(keyID, []byte(it.ID))
 	}
-	i.unix = u.Unix
-	i.version = u.Version
+	i.unix = it.Unix
+	i.version = it.Version
 	return nil
 }

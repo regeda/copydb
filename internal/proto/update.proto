@@ -4,9 +4,13 @@ package model;
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 message Update {
+	repeated Item items = 1 [(gogoproto.nullable) = false];
+}
+
+message Item {
 	string id = 1 [(gogoproto.customname) = "ID"];
-	int64 unix = 2;
-	int64 version = 3;
+	sint64 unix = 2;
+	sint64 version = 3;
 
 	message Field {
 		string name = 1;

@@ -1,6 +1,7 @@
 package copydb
 
 import (
+	"context"
 	"time"
 
 	"github.com/regeda/copydb/internal/model"
@@ -8,45 +9,44 @@ import (
 
 // Statement wraps an update and execs it.
 type Statement struct {
-	upd *model.Update
+	item model.Item
 }
 
 // NewStatement creates a new statement update.
 func NewStatement(id string) Statement {
-	return Statement{allocUpdate(id)}
+	return Statement{model.Item{ID: id}}
 }
 
 // Remove erases an item.
-func (a *Statement) Remove() {
-	a.upd.Remove = true
-	a.upd.Set = nil
-	a.upd.Unset = nil
+func (s *Statement) Remove() {
+	s.item.Remove = true
+	s.item.Set = nil
+	s.item.Unset = nil
 }
 
 // Set updates a field.
-func (a *Statement) Set(name string, data []byte) {
-	if a.upd.Remove {
+func (s *Statement) Set(name string, data []byte) {
+	if s.item.Remove {
 		panic("set command conflicts with remove command")
 	}
-	a.upd.Set = append(a.upd.Set, model.Update_Field{Name: name, Data: data})
+	s.item.Set = append(s.item.Set, model.Item_Field{Name: name, Data: data})
 }
 
 // SetString updates a field within string.
-func (a *Statement) SetString(name, data string) {
-	a.Set(name, []byte(data))
+func (s *Statement) SetString(name, data string) {
+	s.Set(name, []byte(data))
 }
 
 // Unset removes a field.
-func (a *Statement) Unset(name string) {
-	if a.upd.Remove {
+func (s *Statement) Unset(name string) {
+	if s.item.Remove {
 		panic("unset command conflicts with remove command")
 	}
-	a.upd.Unset = append(a.upd.Unset, model.Update_Field{Name: name})
+	s.item.Unset = append(s.item.Unset, model.Item_Field{Name: name})
 }
 
 // Exec runs a statement.
-func (a *Statement) Exec(db *DB, currtime time.Time) error {
-	defer freeUpdate(a.upd)
-	a.upd.Unix = currtime.Unix()
-	return db.replicate(a.upd)
+func (s *Statement) Exec(ctx context.Context, db *DB, currtime time.Time) error {
+	s.item.Unix = currtime.Unix()
+	return db.exec(ctx, s.item)
 }
