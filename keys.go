@@ -8,7 +8,7 @@ const (
 )
 
 var defaultKeys = keys{
-	itemPattern: "{%s}:item",
+	itemPattern: "item:{%s}",
 	list:        "items_list",
 	channel:     "items_update",
 }

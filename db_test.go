@@ -13,21 +13,14 @@ import (
 
 const waitDuration = 5 * time.Second
 
-func stopDB(db *copydb.DB, t time.Duration) {
-	ctx, cancel := context.WithTimeout(context.TODO(), t)
-	defer cancel()
-
-	db.MustStop(ctx)
-}
-
 func TestDB_Replicate(t *testing.T) {
 	t.Run("set", func(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
-		db := copydb.MustNew(redis)
-		defer stopDB(db, waitDuration)
+		db := testutil.NewDB(t, redis)
+		defer testutil.StopDB(t, db, waitDuration)
 
-		testutil.Serve(db)
+		testutil.ServeDB(t, db)
 
 		ts := time.Now()
 
@@ -49,10 +42,10 @@ func TestDB_Replicate(t *testing.T) {
 	t.Run("unset", func(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
-		db := copydb.MustNew(redis)
-		defer stopDB(db, waitDuration)
+		db := testutil.NewDB(t, redis)
+		defer testutil.StopDB(t, db, waitDuration)
 
-		testutil.Serve(db)
+		testutil.ServeDB(t, db)
 
 		ts := time.Now()
 
@@ -84,10 +77,10 @@ func TestDB_Replicate(t *testing.T) {
 	t.Run("remove", func(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
-		db := copydb.MustNew(redis)
-		defer stopDB(db, waitDuration)
+		db := testutil.NewDB(t, redis)
+		defer testutil.StopDB(t, db, waitDuration)
 
-		testutil.Serve(db)
+		testutil.ServeDB(t, db)
 
 		ts := time.Now()
 
@@ -121,10 +114,10 @@ func TestDB_EvictExpired(t *testing.T) {
 	t.Run("by_timer", func(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
-		db := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer stopDB(db, waitDuration)
+		db := testutil.NewDB(t, redis, copydb.WithTTL(ttl))
+		defer testutil.StopDB(t, db, waitDuration)
 
-		testutil.Serve(db)
+		testutil.ServeDB(t, db)
 
 		ts1 := time.Now()
 
@@ -157,10 +150,10 @@ func TestDB_EvictExpired(t *testing.T) {
 	t.Run("on_start", func(t *testing.T) {
 		redis := testutil.NewRedis(t)
 
-		db1 := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer stopDB(db1, waitDuration)
+		db1 := testutil.NewDB(t, redis, copydb.WithTTL(ttl))
+		defer testutil.StopDB(t, db1, waitDuration)
 
-		testutil.Serve(db1)
+		testutil.ServeDB(t, db1)
 
 		ts1 := time.Now()
 
@@ -183,10 +176,10 @@ func TestDB_EvictExpired(t *testing.T) {
 
 		time.Sleep(ttl + time.Second)
 
-		db2 := copydb.MustNew(redis, copydb.WithTTL(ttl))
-		defer stopDB(db2, waitDuration)
+		db2 := testutil.NewDB(t, redis, copydb.WithTTL(ttl))
+		defer testutil.StopDB(t, db2, waitDuration)
 
-		testutil.Serve(db2)
+		testutil.ServeDB(t, db2)
 
 		require.EqualError(t,
 			testutil.WaitForError(ttl, db2, "xxx", ts1.Unix()),
@@ -202,15 +195,15 @@ func TestDB_EvictExpired(t *testing.T) {
 func TestDB_ResolveVersionConflict(t *testing.T) {
 	redis := testutil.NewRedis(t)
 
-	db1 := copydb.MustNew(redis)
-	defer stopDB(db1, waitDuration)
+	db1 := testutil.NewDB(t, redis)
+	defer testutil.StopDB(t, db1, waitDuration)
 
-	testutil.Serve(db1)
+	testutil.ServeDB(t, db1)
 
-	db2 := copydb.MustNew(redis)
-	defer stopDB(db2, waitDuration)
+	db2 := testutil.NewDB(t, redis)
+	defer testutil.StopDB(t, db2, waitDuration)
 
-	testutil.Serve(db2)
+	testutil.ServeDB(t, db2)
 
 	ts1 := time.Now()
 
@@ -241,7 +234,7 @@ func TestDB_ResolveVersionConflict(t *testing.T) {
 		testutil.WaitForItem(waitDuration, db1, "xxx", ts2.Unix()),
 	)
 
-	testutil.Serve(db2)
+	testutil.ServeDB(t, db2)
 
 	require.EqualError(t,
 		testutil.WaitForError(waitDuration, db2, "xxx", ts2.Unix()),

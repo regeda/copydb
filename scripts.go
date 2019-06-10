@@ -33,12 +33,15 @@ end
 
 return redis.call('HINCRBY', KEYS[1], '` + keyVer + `', 1)`)
 
-func setupScripts(r Redis) error {
-	if err := removeItemScript.Load(r).Err(); err != nil {
-		return errors.Wrap(err, "remove script")
-	}
-	if err := updateItemScript.Load(r).Err(); err != nil {
-		return errors.Wrap(err, "update script")
+func loadScripts(r Redis, s ...*redis.Script) error {
+	for _, ss := range s {
+		if err := ss.Load(r).Err(); err != nil {
+			return errors.Wrap(err, "setup script failed")
+		}
 	}
 	return nil
+}
+
+func setupScripts(r Redis) error {
+	return loadScripts(r, removeItemScript, updateItemScript)
 }

@@ -147,15 +147,6 @@ func New(r Redis, opts ...DBOpt) (*DB, error) {
 	return &db, nil
 }
 
-// MustNew creates a new DB. It panics if db setup failed.
-func MustNew(r Redis, opts ...DBOpt) *DB {
-	db, err := New(r, opts...)
-	if err != nil {
-		panic(err.Error())
-	}
-	return db
-}
-
 // Serve subscribes to the channel updates.
 func (db *DB) Serve() error {
 	pubsub := db.r.Subscribe(db.keys.channel)
@@ -251,13 +242,6 @@ func (db *DB) replicate(update *model.Update) error {
 	return errors.Wrap(err, "pipeline failed")
 }
 
-// MustServe starts the database. It panics if serve failed.
-func (db *DB) MustServe() {
-	if err := db.Serve(); err != nil {
-		panic(err.Error())
-	}
-}
-
 // Stop terminates serve.
 func (db *DB) Stop(ctx context.Context) error {
 	select {
@@ -266,13 +250,6 @@ func (db *DB) Stop(ctx context.Context) error {
 		return ctx.Err()
 	}
 	return nil
-}
-
-// MustStop terminates serve. It panics if stopping failed.
-func (db *DB) MustStop(ctx context.Context) {
-	if err := db.Stop(ctx); err != nil {
-		panic(err.Error())
-	}
 }
 
 // Query runs a query and waits for scan completion.

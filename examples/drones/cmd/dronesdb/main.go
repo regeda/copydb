@@ -26,14 +26,10 @@ var (
 	listenHost = flag.String("listen-host", ":8080", "listen host for incoming events")
 )
 
-var defSummaryObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001, 1.0: 0.001}
-
-const defMaxAge = time.Minute
-
 var handlerDurationSummary = prometheus.NewSummaryVec(prometheus.SummaryOpts{
 	Name:       "handler_duration",
-	Objectives: defSummaryObjectives,
-	MaxAge:     defMaxAge,
+	Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001, 1.0: 0.001},
+	MaxAge:     time.Minute,
 }, []string{"handler"})
 
 func init() {
@@ -65,6 +61,11 @@ func main() {
 		copydb.WithCapacity(*dbCapacity),
 		copydb.WithTTL(*dbTTL),
 		copydb.WithLogger(log),
+		copydb.WithBufferedQueries(1024),
+		copydb.WithPubSubOpts(copydb.PubSubOpts{
+			ReceiveTimeout: time.Second,
+			ChannelSize:    1024,
+		}),
 		copydb.WithPool(spatial.NewIndex(13, func() copydb.Item {
 			return make(copydb.SimpleItem)
 		})),
